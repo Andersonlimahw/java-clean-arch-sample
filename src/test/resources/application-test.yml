@@ -1,0 +1,20 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+management:
+  health:
+    redis:
+      enabled: false
+    rabbit:
+      enabled: false
+
+app:
+  jwt:
+    issuer: https://test.payments.muse.com
+    audience: payments-api-test
+    access-token-ttl: PT5M
+    refresh-token-ttl: P1D
