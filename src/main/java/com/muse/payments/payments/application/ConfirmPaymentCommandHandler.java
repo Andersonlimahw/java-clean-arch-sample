@@ -18,10 +18,16 @@ public class ConfirmPaymentCommandHandler implements CommandHandler<ConfirmPayme
 
     private final PaymentRepository paymentRepository;
     private final OutboxPort outboxPort;
+    private final PaymentCachePort paymentCachePort;
 
-    public ConfirmPaymentCommandHandler(PaymentRepository paymentRepository, OutboxPort outboxPort) {
+    public ConfirmPaymentCommandHandler(
+            PaymentRepository paymentRepository,
+            OutboxPort outboxPort,
+            PaymentCachePort paymentCachePort
+    ) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
         this.outboxPort = Objects.requireNonNull(outboxPort);
+        this.paymentCachePort = Objects.requireNonNull(paymentCachePort);
     }
 
     @Override
@@ -51,6 +57,8 @@ public class ConfirmPaymentCommandHandler implements CommandHandler<ConfirmPayme
                 outboxPort.append(integrationEvent);
             }
         }
+
+        paymentCachePort.evictAfterCommit(saved.getId());
 
         return PaymentResponse.from(saved);
     }

@@ -13,9 +13,11 @@ import java.util.Objects;
 public class GetPaymentByIdQueryHandler implements QueryHandler<GetPaymentByIdQuery, PaymentResponse> {
 
     private final PaymentRepository paymentRepository;
+    private final PaymentCachePort paymentCachePort;
 
-    public GetPaymentByIdQueryHandler(PaymentRepository paymentRepository) {
+    public GetPaymentByIdQueryHandler(PaymentRepository paymentRepository, PaymentCachePort paymentCachePort) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
+        this.paymentCachePort = Objects.requireNonNull(paymentCachePort);
     }
 
     @Override
@@ -23,10 +25,16 @@ public class GetPaymentByIdQueryHandler implements QueryHandler<GetPaymentByIdQu
     public PaymentResponse handle(GetPaymentByIdQuery query) {
         Objects.requireNonNull(query, "query must not be null");
 
-        Payment payment = paymentRepository.findById(query.paymentId())
-                .filter(p -> p.isOwnedBy(query.userId()))
-                .orElseThrow(() -> new EntityNotFoundException("Payment not found with id: " + query.paymentId()));
+        PaymentResponse response = paymentCachePort.getOrLoad(query.paymentId(), () -> {
+            Payment payment = paymentRepository.findById(query.paymentId())
+                    .orElseThrow(() -> new EntityNotFoundException("Payment not found with id: " + query.paymentId()));
+            return PaymentResponse.from(payment);
+        });
 
-        return PaymentResponse.from(payment);
+        if (!response.userId().equals(query.userId())) {
+            throw new EntityNotFoundException("Payment not found with id: " + query.paymentId());
+        }
+
+        return response;
     }
 }

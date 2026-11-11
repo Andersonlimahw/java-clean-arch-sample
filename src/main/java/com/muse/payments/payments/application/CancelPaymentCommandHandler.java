@@ -18,10 +18,16 @@ public class CancelPaymentCommandHandler implements CommandHandler<CancelPayment
 
     private final PaymentRepository paymentRepository;
     private final OutboxPort outboxPort;
+    private final PaymentCachePort paymentCachePort;
 
-    public CancelPaymentCommandHandler(PaymentRepository paymentRepository, OutboxPort outboxPort) {
+    public CancelPaymentCommandHandler(
+            PaymentRepository paymentRepository,
+            OutboxPort outboxPort,
+            PaymentCachePort paymentCachePort
+    ) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
         this.outboxPort = Objects.requireNonNull(outboxPort);
+        this.paymentCachePort = Objects.requireNonNull(paymentCachePort);
     }
 
     @Override
@@ -52,6 +58,8 @@ public class CancelPaymentCommandHandler implements CommandHandler<CancelPayment
                 outboxPort.append(integrationEvent);
             }
         }
+
+        paymentCachePort.evictAfterCommit(saved.getId());
 
         return PaymentResponse.from(saved);
     }
