@@ -41,8 +41,8 @@ public class GlobalExceptionHandler {
         return createProblemDetail(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
     }
 
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
+    @ExceptionHandler({ObjectOptimisticLockingFailureException.class, jakarta.persistence.OptimisticLockException.class})
+    public ProblemDetail handleOptimisticLock(Exception ex, HttpServletRequest request) {
         return createProblemDetail(HttpStatus.CONFLICT, "Concurrent Modification", "The resource was modified concurrently. Please retry.", request);
     }
 
