@@ -22,3 +22,18 @@ CREATE TABLE IF NOT EXISTS processed_events (
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (consumer, event_id)
 );
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key VARCHAR(120) NOT NULL,
+    user_id UUID NOT NULL,
+    request_hash VARCHAR(64) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    response_code INTEGER NULL,
+    response_body JSONB NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires
+    ON idempotency_keys (expires_at);

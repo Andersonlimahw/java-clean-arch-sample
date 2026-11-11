@@ -3,20 +3,27 @@ package com.muse.payments.shared.infrastructure;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "outbox_events")
-public class OutboxEventEntity {
+public class OutboxEventEntity implements Persistable<UUID> {
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
+
+    @Transient
+    private boolean isNew = true;
 
     @Column(name = "aggregate_type", nullable = false, length = 100)
     private String aggregateType;
@@ -133,5 +140,16 @@ public class OutboxEventEntity {
 
     public void setNextAttemptAt(Instant nextAttemptAt) {
         this.nextAttemptAt = nextAttemptAt;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostLoad
+    @PostPersist
+    void markNotNew() {
+        this.isNew = false;
     }
 }

@@ -53,6 +53,17 @@ class PaymentsApplicationIT extends TestcontainersBase {
                 .noneMatch(event -> event.getAggregateId().equals(aggregateId));
     }
 
+    @Test
+    @DisplayName("findPendingForPublishing returns only pending unpublished events")
+    void findPendingForPublishingQueriesCorrectly() {
+        UUID aggregateId = UUID.randomUUID();
+        txTestService.doWithCommit(aggregateId);
+
+        var pending = outboxJpaRepository.findPendingForPublishing(java.time.Instant.now().plusSeconds(60), 10);
+        assertThat(pending).isNotEmpty();
+        assertThat(pending.stream().anyMatch(e -> e.getAggregateId().equals(aggregateId))).isTrue();
+    }
+
     @TestConfiguration
     static class Config {
         @Bean

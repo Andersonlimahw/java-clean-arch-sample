@@ -24,4 +24,17 @@ public abstract class AggregateRoot<ID> {
     }
 
     public abstract ID getId();
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        AggregateRoot<?> that = (AggregateRoot<?>) o;
+        return getId() != null && Objects.equals(getId(), that.getId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getId());
+    }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.shared.application.IntegrationEvent;
 import com.muse.payments.shared.application.OutboxPort;
 import com.muse.payments.shared.web.CorrelationContext;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,11 +17,11 @@ import java.util.Objects;
 @Component
 public class OutboxJpaAdapter implements OutboxPort {
 
-    private final OutboxJpaRepository outboxJpaRepository;
+    private final EntityManager entityManager;
     private final ObjectMapper objectMapper;
 
-    public OutboxJpaAdapter(OutboxJpaRepository outboxJpaRepository, ObjectMapper objectMapper) {
-        this.outboxJpaRepository = Objects.requireNonNull(outboxJpaRepository);
+    public OutboxJpaAdapter(EntityManager entityManager, ObjectMapper objectMapper) {
+        this.entityManager = Objects.requireNonNull(entityManager);
         this.objectMapper = Objects.requireNonNull(objectMapper);
     }
 
@@ -49,7 +50,7 @@ public class OutboxJpaAdapter implements OutboxPort {
                     event.occurredAt()
             );
 
-            outboxJpaRepository.save(entity);
+            entityManager.persist(entity);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize outbox event " + event.eventId(), e);
         }

@@ -6,6 +6,7 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
 @AnalyzeClasses(packages = "com.muse.payments", importOptions = ImportOption.DoNotIncludeTests.class)
@@ -24,4 +25,21 @@ class ArchitectureTest {
                     "com.muse.payments.shared.domain.."
             )
             .as("Domain classes must be pure and depend only on JDK and shared.domain");
+
+    @ArchTest
+    static final ArchRule domain_should_not_have_framework_annotations = noClasses()
+            .that().resideInAPackage("..domain..")
+            .should().beAnnotatedWith("org.springframework.stereotype.Component")
+            .orShould().beAnnotatedWith("org.springframework.stereotype.Service")
+            .orShould().beAnnotatedWith("jakarta.persistence.Entity")
+            .as("Domain classes must not be annotated with Spring or JPA annotations");
+
+    @ArchTest
+    static final ArchRule application_should_not_depend_on_web_or_infra_entities = noClasses()
+            .that().resideInAPackage("..application..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..web..",
+                    "..infrastructure..OutboxEventEntity.."
+            )
+            .as("Application layer must not depend on web controllers or infrastructure entities");
 }

@@ -29,6 +29,8 @@ mvn clean verify
 ```
 
 ### Running locally
+Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`).
+To run full local platform services with Docker Compose (app, postgres, redis, rabbitmq), see the infrastructure stack delivered in [PR #2 (Platform Infra)](https://github.com/Andersonlimahw/java-clean-arch-sample/pull/2):
 ```bash
 docker compose up -d postgres redis rabbitmq
 mvn spring-boot:run

@@ -35,7 +35,17 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
             return null;
         }
 
-        UUID userId = UUID.fromString(jwt.getSubject());
+        String subject = jwt.getSubject();
+        if (subject == null || subject.isBlank()) {
+            throw new org.springframework.security.authentication.BadCredentialsException("JWT subject claim is missing");
+        }
+
+        UUID userId;
+        try {
+            userId = UUID.fromString(subject);
+        } catch (IllegalArgumentException e) {
+            throw new org.springframework.security.authentication.BadCredentialsException("JWT subject is not a valid UUID: " + subject);
+        }
         List<String> rolesList = jwt.getClaimAsStringList("roles");
         Set<String> roles = rolesList == null ? Set.of() : new HashSet<>(rolesList);
 

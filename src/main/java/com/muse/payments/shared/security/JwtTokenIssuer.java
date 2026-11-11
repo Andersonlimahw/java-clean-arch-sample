@@ -38,6 +38,7 @@ public class JwtTokenIssuer {
                 .issuedAt(now)
                 .expiresAt(expiresAt)
                 .id(UUID.randomUUID().toString())
+                .claim("typ", "access")
                 .claim("roles", normalizedRoles)
                 .build();
 

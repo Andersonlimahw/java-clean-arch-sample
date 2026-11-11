@@ -2,6 +2,7 @@ package com.muse.payments.shared.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.shared.web.CorrelationContext;
+import com.muse.payments.shared.web.GlobalExceptionHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -50,9 +51,11 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                "/error",
                                 "/api/v1/auth/**",
                                 "/actuator/health/**",
                                 "/actuator/info",
+                                "/actuator/prometheus",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
@@ -125,16 +128,7 @@ public class SecurityConfig {
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
 
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setTitle(title);
-        problem.setType(URI.create("urn:problem-type:" + status.value()));
-        problem.setInstance(URI.create(request.getRequestURI()));
-
-        String correlationId = CorrelationContext.get();
-        if (correlationId != null) {
-            problem.setProperty("correlationId", correlationId);
-        }
-
+        ProblemDetail problem = GlobalExceptionHandler.createProblemDetail(status, title, detail, request);
         objectMapper.writeValue(response.getOutputStream(), problem);
     }
 }

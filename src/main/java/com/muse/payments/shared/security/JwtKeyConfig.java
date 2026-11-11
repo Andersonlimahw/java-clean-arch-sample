@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -32,26 +34,31 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.List;
-import java.util.UUID;
 
 @Configuration
 public class JwtKeyConfig {
 
     private static final Logger log = LoggerFactory.getLogger(JwtKeyConfig.class);
+    private static final String DETERMINISTIC_KEY_ID = "payments-jwt-key-v1";
 
     @Bean
-    public RSAKey rsaKey(JwtProperties properties) {
+    public RSAKey rsaKey(JwtProperties properties, Environment env) {
         if (StringUtils.hasText(properties.privateKeyPem()) && StringUtils.hasText(properties.publicKeyPem())) {
             try {
                 RSAPublicKey publicKey = parsePublicKey(properties.publicKeyPem());
                 RSAPrivateKey privateKey = parsePrivateKey(properties.privateKeyPem());
                 return new RSAKey.Builder(publicKey)
                         .privateKey(privateKey)
-                        .keyID(UUID.randomUUID().toString())
+                        .keyID(DETERMINISTIC_KEY_ID)
                         .build();
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to parse configured RSA JWT keys", e);
             }
+        }
+
+        boolean isLocalOrTest = env.acceptsProfiles(Profiles.of("local", "test", "default"));
+        if (!isLocalOrTest) {
+            throw new IllegalStateException("Production environment must define JWT_PRIVATE_KEY and JWT_PUBLIC_KEY. Ephemeral keys are forbidden in production.");
         }
 
         log.warn("No JWT keys provided. Generating an ephemeral 2048-bit RSA key pair for local/test use.");
@@ -61,7 +68,7 @@ public class JwtKeyConfig {
             KeyPair keyPair = generator.generateKeyPair();
             return new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
                     .privateKey((RSAPrivateKey) keyPair.getPrivate())
-                    .keyID(UUID.randomUUID().toString())
+                    .keyID(DETERMINISTIC_KEY_ID)
                     .build();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate ephemeral RSA key pair", e);
@@ -96,8 +103,12 @@ public class JwtKeyConfig {
                 }
                 return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_audience", "Token audience does not match expected audience", null));
             };
+            OAuth2TokenValidator<Jwt> tokenTypeValidator = new JwtClaimValidator<String>(
+                    "typ",
+                    typ -> typ == null || "access".equals(typ)
+            );
 
-            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestampValidator, issuerValidator, audienceValidator));
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestampValidator, issuerValidator, audienceValidator, tokenTypeValidator));
             return decoder;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to configure JwtDecoder", e);
@@ -107,6 +118,8 @@ public class JwtKeyConfig {
     private RSAPublicKey parsePublicKey(String pem) throws Exception {
         String clean = pem.replace("-----BEGIN PUBLIC KEY-----", "")
                 .replace("-----END PUBLIC KEY-----", "")
+                .replace("\\n", "")
+                .replace("\\r", "")
                 .replaceAll("\\s+", "");
         byte[] decoded = Base64.getDecoder().decode(clean);
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
@@ -116,6 +129,8 @@ public class JwtKeyConfig {
     private RSAPrivateKey parsePrivateKey(String pem) throws Exception {
         String clean = pem.replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
+                .replace("\\n", "")
+                .replace("\\r", "")
                 .replaceAll("\\s+", "");
         byte[] decoded = Base64.getDecoder().decode(clean);
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
