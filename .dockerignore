@@ -1,0 +1,12 @@
+target/
+.git/
+.worktrees/
+.specify/
+.agents/
+.claude/
+.gemini/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.log
