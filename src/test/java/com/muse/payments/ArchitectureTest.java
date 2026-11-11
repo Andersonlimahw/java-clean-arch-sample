@@ -22,9 +22,9 @@ class ArchitectureTest {
             .that().resideInAPackage("..domain..")
             .should().onlyDependOnClassesThat().resideInAnyPackage(
                     "java..",
-                    "com.muse.payments.shared.domain.."
+                    "com.muse.payments..domain.."
             )
-            .as("Domain classes must be pure and depend only on JDK and shared.domain");
+            .as("Domain classes must be pure and depend only on JDK and domain packages");
 
     @ArchTest
     static final ArchRule domain_should_not_have_framework_annotations = noClasses()
