@@ -4,6 +4,12 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+  rabbitmq:
+    listener:
+      simple:
+        missing-queues-fatal: false
+        retry:
+          enabled: false
 
 management:
   health:
