@@ -16,3 +16,4 @@ Operational behavior that these decisions refer to is in [../architecture.md](..
 | [0010](0010-compose-vs-kubernetes.md) | Compose for local, Kubernetes for production shape | Accepted |
 | [0011](0011-railway-vs-other-hosting.md) | Railway as the primary host | Accepted |
 | [0012](0012-fraud-screening-failure-policy.md) | Fraud screening never approves on failure | Accepted |
+| [0013](0013-java-25-lts.md) | Java 25 LTS | Accepted |

@@ -17,8 +17,7 @@
     <description>Payments platform built as a Spring Modulith modular monolith (identity, payments, notifications)</description>
 
     <properties>
-        <java.version>21</java.version>
-        <maven.compiler.release>21</maven.compiler.release>
+        <java.version>25</java.version>
         <spring-modulith.version>1.4.14</spring-modulith.version>
         <springdoc.version>2.8.17</springdoc.version>
         <archunit.version>1.4.2</archunit.version>
@@ -26,6 +25,10 @@
         <wiremock.version>3.13.2</wiremock.version>
         <!-- Docker Engine 29 requires Testcontainers >= 1.21.4 (API version negotiation). -->
         <testcontainers.version>1.21.4</testcontainers.version>
+        <!-- Surefire late-replaces @{argLine}. The property must exist even when no other agent sets it. -->
+        <argLine/>
+        <!-- Empty unless initialize has resolved the Mockito jar. A direct surefire:test then starts without -javaagent. -->
+        <mockito.agent.argLine></mockito.agent.argLine>
     </properties>
 
     <dependencyManagement>
@@ -220,9 +223,101 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- JDK 23+ does not run processors found only on the classpath. -->
+                    <proc>full</proc>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${project.parent.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.springframework.modulith</groupId>
+                            <artifactId>spring-modulith-apt</artifactId>
+                            <version>${spring-modulith.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>mockito-agent-path</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.groovy</groupId>
+                        <artifactId>groovy</artifactId>
+                        <version>${groovy.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.groovy</groupId>
+                        <artifactId>groovy-jsr223</artifactId>
+                        <version>${groovy.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>mockito-agent-argline</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <script language="groovy"><![CDATA[
+                                    def jar = project.getProperty("org.mockito:mockito-core:jar")
+                                    if (jar != null && jar.endsWith(".jar")) {
+                                        def mavenProject = project.getReference("maven.project")
+                                        mavenProject.properties.setProperty("mockito.agent.argLine", "-javaagent:" + jar)
+                                    }
+                                ]]></script>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-java</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <!-- Boot 3.5.16 supports Java 17 through 25. -->
+                                    <version>[${java.version},26)</version>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>-Djdk.tracePinnedThreads=full</argLine>
+                    <argLine>@{argLine} @{mockito.agent.argLine}</argLine>
+                    <systemPropertyVariables>
+                        <!-- Not java.version: that name is the running JVM (25.0.5), which resource filtering would also prefer. -->
+                        <maven.java.version>${java.version}</maven.java.version>
+                    </systemPropertyVariables>
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
@@ -235,7 +330,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
-                    <argLine>-Djdk.tracePinnedThreads=full</argLine>
+                    <argLine>@{argLine} @{mockito.agent.argLine}</argLine>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>
