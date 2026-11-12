@@ -24,7 +24,7 @@ No production project is created from this repo. Hosting docs list the env vars 
 
 ## Consequences
 
-- One container runs the API, the relay, and the consumer. Scale-out means competing consumers plus `SKIP LOCKED` on the outbox, which is supported, and more than one relay is safe.
+- One container runs the API, the relay, and the consumer. Scale-out means competing consumers. More than one relay is safe: the claim uses `FOR UPDATE SKIP LOCKED`, and the `next_attempt_at` lease covers the publisher-confirm wait, so a second relay skips that row until the lease expires.
 - Railway's private networking must reach Postgres, Redis, and RabbitMQ. Those may be Railway plugins or managed services elsewhere. The app does not embed them.
 - Cloud Run remains a documented escape hatch with `minScale: 1` and CPU throttling disabled so the relay keeps polling.
 

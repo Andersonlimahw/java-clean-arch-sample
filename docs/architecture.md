@@ -38,7 +38,7 @@ flowchart TB
     ID --> PG
     NTF --> PG
     SH -->|relay| MQ["RabbitMQ"]
-    MQ -->|payment.created| NTF
+    MQ -->|"notifications queue"| NTF
     PAY -->|GET by id| Redis[("Redis")]
     ID -->|auth rate limit| Redis
 ```
@@ -85,6 +85,7 @@ sequenceDiagram
 
 `GET /api/v1/payments/{id}` is cache-aside in Redis. PostgreSQL is read on a miss.
 Confirm and cancel evict the key after the database transaction commits.
+The diagram is the create path. Confirm and cancel append their own outbox rows and are delivered on the same queue. The relay commits the claim, then waits for the publisher confirm, before it sets `published_at`.
 
 ## HTTP contract
 
@@ -124,24 +125,59 @@ OpenAPI: `/v3/api-docs`. Swagger UI: `/swagger-ui.html`.
 
 Create, confirm, and cancel commit the aggregate and the outbox row in one transaction.
 `OutboxJpaAdapter.append` is `@Transactional(propagation = MANDATORY)`. `OutboxPort` itself is a plain interface.
-The relay (`OutboxRelayService`) is scheduled when `app.outbox.scheduling.enabled` is unset or `true`. It polls every `app.outbox.poll-interval-ms` milliseconds (default 1000) and locks up to 50 due rows (`published_at IS NULL` and `next_attempt_at <= now`) with `FOR UPDATE SKIP LOCKED`.
-It publishes to the topic exchange `payments.events` and sets `published_at` when `convertAndSend` returns. It does not wait on the correlated publisher confirm, so a later nack or unroutable return leaves `published_at` set.
+The append stores `correlationId` and the current W3C `traceparent` on the outbox headers.
+Confirm and cancel follow the same relay and the same notifications queue as create.
+
+The relay (`OutboxRelayService`) is scheduled when `app.outbox.scheduling.enabled` is unset or `true` (`SchedulingConfig`). The schedule is a fixed delay of `app.outbox.poll-interval-ms` milliseconds (default 1000). Each tick handles up to 50 due rows, one claim transaction at a time. The claim is `SELECT … LIMIT 1 … FOR UPDATE SKIP LOCKED` where `published_at IS NULL` and `next_attempt_at <= now`. It then sets `next_attempt_at` to now plus `app.messaging.confirm-timeout` (default 5s) plus 10 seconds, and commits. The row lock is released before the broker call. Another relay skips that row until the lease expires.
+
+Each attempt publishes to the topic exchange `payments.events` with its own confirm correlation id. `spring.rabbitmq.publisher-confirm-type` is `correlated`, `publisher-returns` is true, and the `RabbitTemplate` is mandatory. The outbox id travels as `X-Event-Id`. The relay restores the stored `traceparent` before `convertAndSend`. A short transaction sets `published_at` only after the broker acks and the attempt has no return. `attempts` stays unchanged on that success. A nack, a return, a confirm timeout, or a send exception increments `attempts`, stores `last_error` (truncated at 500 characters), and sets `next_attempt_at` to now plus `min(300, 2^min(attempts, 8) * 2 + jitter)` seconds. Jitter is an integer from 1 through 3 (`PublishRetryBackoff`). The row stays unpublished until a later attempt succeeds. A crash after the broker accepts the message and before `published_at` commits publishes a duplicate once the lease expires. An interrupt stops the rest of that tick and leaves the interrupt flag set.
 
 | Outbox `event_type` | Routing key | Queue |
 |---|---|---|
 | `PaymentCreated` | `payment.created` | `payments.created.notifications` |
-| `PaymentCompleted` | `payment.completed` | none |
-| `PaymentCancelled` | `payment.cancelled` | none |
+| `PaymentCompleted` | `payment.completed` | `payments.created.notifications` |
+| `PaymentCancelled` | `payment.cancelled` | `payments.created.notifications` |
 
-Confirm and cancel therefore publish an event that no queue binds. They do not create a notification.
-`PaymentNotificationConsumer` listens only on `payments.created.notifications`. It inserts the notification and a `processed_events` row (`consumer = PaymentNotificationConsumer`, primary key `(consumer, event_id)`) in one transaction. A second delivery of the same event id does not insert a second notification.
-That is at-least-once delivery plus an idempotent consumer for `payment.created`.
+The queue name and the dead-letter routing key `payment.created.dlq` stayed from the created-only topology. Completed and cancelled are additional bindings on that queue, and every notification reject uses the same dead-letter key. The dead-letter exchange is the durable direct exchange `payments.events.dlx`, bound to the durable queue `payments.created.notifications.dlq`. The main queue sets no message TTL and no max length.
 
-When `convertAndSend` throws, the relay increments `attempts`, stores `last_error`, and sets `next_attempt_at` to `min(300, 2^attempts * 2 + jitter)` seconds. Jitter is an integer from 1 through 3. The delay caps at 300 seconds and the row stays eligible, so a publish that keeps failing is retried indefinitely at that cap.
+`PaymentNotificationConsumer` listens on `payments.created.notifications`. It inserts the notification and a `processed_events` row (`consumer = PaymentNotificationConsumer`, primary key `(consumer, event_id)`) in one transaction. The event id is `X-Event-Id`, or a body `eventId` when the header is absent. `paymentId` is not an event id. A second delivery of the same event id is acknowledged and does not insert a second notification. `PaymentCreated`, `PaymentCompleted`, and `PaymentCancelled` each create a notification (`PAYMENT_CREATED`, `PAYMENT_COMPLETED`, `PAYMENT_CANCELLED`).
 
-`payments.created.notifications` is a durable queue with dead-letter exchange `payments.events.dlx` (direct) and dead-letter routing key `payment.created.dlq`, bound to the durable queue `payments.created.notifications.dlq`.
-`RabbitMqConfig` does not change `defaultRequeueRejected`. Processing failures in `PaymentNotificationConsumer` are rethrown as `RuntimeException`, and Spring's default error handler requeues that onto `payments.created.notifications`. The queue has no message TTL or max length. Spring rejects without requeue for message-conversion and argument-resolution failures; this listener takes a `String` payload and optional headers, and it turns JSON problems into `RuntimeException`, so those messages are requeued rather than dead-lettered. A payload that parses but is missing `paymentId`, `userId`, `amount`, or `currency` is acknowledged and dropped after `processed_events` records the event id.
-`spring.rabbitmq.publisher-confirm-type` is `correlated`, `publisher-returns` is true, and the `RabbitTemplate` is mandatory.
+Permanent failures throw `AmqpRejectAndDontRequeueException` and skip the retry budget: a missing or invalid event id, a missing event type, invalid JSON, a non-object payload, a missing or invalid identifier, or an unknown event type. The listener transaction rolls back, so `processed_events` does not keep that id. Transient failures (the listener wraps them in `RuntimeException`) are retried by the advice chain on the listener container factory: `app.messaging.listener-max-attempts` (default 5), `listener-initial-interval-ms` (default 500), `listener-multiplier` (default 2.0), and `listener-max-interval-ms` (default 10000, a hard cap), with exponential backoff and jitter. `spring.rabbitmq.listener.simple.retry` does not configure this chain. Other listener container properties, including `auto-startup`, still come from Boot. `defaultRequeueRejected` is false. After the attempt budget, `RejectAndDontRequeueRecoverer` rejects without requeue and RabbitMQ routes the message to the DLQ. DLQ messages stay there until an operator inspects them.
+
+That is at-least-once delivery plus an idempotent consumer for all three payment events. Delivery detail is in [messaging.md](messaging.md).
+
+## Observability
+
+Health, Prometheus metrics, and OpenTelemetry traces describe the running process. PostgreSQL remains the source of truth. Alert rules and the local collector stack are in [observability.md](observability.md).
+
+| Signal | Where |
+|---|---|
+| Liveness / readiness | `/actuator/health/liveness`, `/actuator/health/readiness` (readiness includes the database) |
+| Metrics | `/actuator/prometheus`, common tag `application=payments-platform` |
+| Traces | OTLP HTTP. Default samples every trace and exports to `http://localhost:4318/v1/traces`. Profile `prod` samples 10% unless `TRACING_SAMPLING_PROBABILITY` is set, and exports nothing until a collector URL is set. |
+| Correlation | `X-Correlation-Id` on the HTTP response, the outbox headers, and the AMQP header. MDC key `correlationId`. |
+| Trace context | W3C `traceparent` on the outbox row. The relay restores it before publish. Listener and template observations continue that trace id. |
+| Logs | Plain text locally, with `traceId`, `spanId`, and `correlationId` in the level pattern. Profile `prod` sets `logging.structured.format.console=ecs`. |
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` is the collector base URL. `OtlpEndpointNormalizer` appends `/v1/traces` when that path is missing. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the full traces URL and wins when both are set. A blank endpoint disables export. Tests set `management.tracing.enabled=false`.
+
+| Meter | Type | Meaning |
+|---|---|---|
+| `payments.outbox.pending` | gauge | Rows with `published_at` null, including rows currently leased |
+| `payments.outbox.lag.seconds` | gauge | Age of the oldest unpublished `occurred_at` |
+| `payments.outbox.publish.lag` | timer | Time from `occurred_at` until `published_at` is set. SLO buckets at 1s, 10s, 30s, and 60s |
+| `payments.outbox.attempts` | gauge | Sum of `attempts` on unpublished rows |
+| `payments.queue.messages` | gauge | Ready messages. Tags `role=main` on `payments.created.notifications` and `role=dlq` on `payments.created.notifications.dlq`, plus the queue name |
+| `payments.cache.hits` / `payments.cache.misses` / `payments.cache.errors` | counters | Cache-aside outcomes |
+| `payments.cache.latency` | timer | Cache read latency |
+| `http.server.requests` | timer | API latency. SLO buckets at 100ms, 300ms, 500ms, and 1s |
+
+A scrape that cannot reach PostgreSQL or RabbitMQ, or that finds a queue missing, records `NaN` for that gauge and logs a warning. The HTTP request is unaffected.
+
+## Process modes
+
+The serving process handles HTTP, runs the outbox relay, and consumes notifications.
+`APP_MIGRATION_ONLY=true` is read by `MigrationOnlyMode` (command line, then the system property `app.migration-only`, then the environment variable). `PaymentsApplication` then forces Flyway on, a non-web application type, listener auto-startup off, outbox scheduling off, and `spring.modulith.moments.enabled=false` (Moments would otherwise turn scheduling back on). Those overrides sit ahead of environment variables. The process serves no HTTP, starts no Rabbit consumers, and starts no outbox scheduler. It exits `0` only when Flyway has applied the schema, nothing is pending, and those runtime checks pass. Startup failure, a missing Flyway bean, pending migrations, or zero applied migrations exit non-zero. The Kubernetes Job sets the variable. Replicas leave it unset and inherit `SPRING_FLYWAY_ENABLED=false`.
 
 ## Boundaries
 

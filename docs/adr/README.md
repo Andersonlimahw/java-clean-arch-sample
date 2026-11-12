@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Operational behavior that these decisions refer to is in [../architecture.md](../architecture.md). When a number differs, the architecture page is the one checked against the code.
+Operational behavior that these decisions refer to is in [../architecture.md](../architecture.md). Broker delivery is also in [../messaging.md](../messaging.md). Metrics, traces, and logs are in [../observability.md](../observability.md). When a number differs, the architecture page is the one checked against the code.
 
 | ADR | Title | Status |
 |---|---|---|

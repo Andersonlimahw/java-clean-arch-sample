@@ -5,7 +5,7 @@
 
 ## Context
 
-After a payment is created, one consumer must create a notification. Volume is a single application's outbox, not a multi-tenant log with many independent consumer groups. Publish retries live in the outbox relay ([ADR 0006](0006-transactional-outbox.md)). The broker needs a route per event type the relay emits: `payment.created`, `payment.completed`, and `payment.cancelled`.
+After a payment is created, confirmed, or cancelled, one consumer must create a notification. Volume is a single application's outbox, not a multi-tenant log with many independent consumer groups. Publish retries live in the outbox relay ([ADR 0006](0006-transactional-outbox.md)). The broker needs a route per event type the relay emits: `payment.created`, `payment.completed`, and `payment.cancelled`.
 
 ## Decision
 
@@ -13,19 +13,19 @@ Use RabbitMQ 3.13. `RabbitMqConfig` declares:
 
 - topic exchange `payments.events` (durable)
 - direct dead-letter exchange `payments.events.dlx` (durable)
-- durable queue `payments.created.notifications`, bound to `payments.events` with routing key `payment.created`, and arguments `x-dead-letter-exchange=payments.events.dlx`, `x-dead-letter-routing-key=payment.created.dlq`
+- durable queue `payments.created.notifications`, bound to `payments.events` with routing keys `payment.created`, `payment.completed`, and `payment.cancelled`, and arguments `x-dead-letter-exchange=payments.events.dlx`, `x-dead-letter-routing-key=payment.created.dlq`
 - durable queue `payments.created.notifications.dlq`, bound to `payments.events.dlx` with routing key `payment.created.dlq`
 
-`OutboxRelayService` also publishes `payment.completed` and `payment.cancelled`. No queue is bound to those keys, so confirm and cancel events leave the exchange with no consumer. `PaymentNotificationConsumer` listens only to `payments.created.notifications`.
+The queue name and the dead-letter routing key stayed from the created-only topology. Completed and cancelled are additional bindings, and every notification reject uses that same dead-letter key. `PaymentNotificationConsumer` listens on `payments.created.notifications` and creates a notification for `PaymentCreated`, `PaymentCompleted`, and `PaymentCancelled`.
 
-`RabbitMqConfig` leaves `defaultRequeueRejected` at the container default. Processing failures are rethrown as `RuntimeException`, which Spring's default error handler requeues onto `payments.created.notifications`. The queue sets no message TTL and no max length. The DLQ receives a message when the broker dead-letters it (reject with requeue false, TTL, or length). Spring does that reject for conversion and argument-resolution failures. This listener's arguments are a `String` plus optional headers, and JSON failures become `RuntimeException`, so they are requeued. A payload that parses but is missing `paymentId`, `userId`, `amount`, or `currency` is acknowledged and discarded after the event id is stored in `processed_events`.
+`defaultRequeueRejected` is false. Permanent failures (`AmqpRejectAndDontRequeueException`: bad JSON, missing or invalid event id, missing event type, missing or invalid identifiers, unknown event type) skip the listener retry budget and are rejected without requeue. Transient failures are retried by the advice chain on the listener container factory (`app.messaging.listener-*`: default 5 attempts, initial interval 500 ms, multiplier 2, max interval 10 seconds, exponential backoff with jitter). After that budget, `RejectAndDontRequeueRecoverer` rejects without requeue. RabbitMQ then routes the message to the DLQ. The queue sets no message TTL and no max length. DLQ messages stay there until an operator inspects them. `spring.rabbitmq.listener.simple.retry` does not configure this chain.
 
 The broker is a transport. PostgreSQL remains the source of truth via the outbox. The broker is not the ledger.
 
 ## Consequences
 
-- Competing consumers and per-message ack are available on `payments.created.notifications`. The DLQ is declared and bound; the current listener path requeues failures instead of dead-lettering them.
-- Ordering is per queue, not a partitioned log. Confirm and cancel are not delivered to this queue, so there is no notification row for those event types.
+- Competing consumers and per-message ack are available on `payments.created.notifications`. Transient failures are retried, then dead-lettered. Permanent failures are dead-lettered without that retry budget.
+- Ordering is per queue, not a partitioned log. Created, completed, and cancelled events share this queue, so each produces a notification row when the consumer accepts it.
 - Ops must run RabbitMQ (or a managed equivalent) beside PostgreSQL and Redis.
 - Switching to Kafka later means a new relay publisher. The outbox table does not change.
 

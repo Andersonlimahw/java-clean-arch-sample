@@ -16,7 +16,7 @@ Trade-offs: [docs/adr](docs/adr/README.md).
   - `shared`: Common domain building blocks, the outbox port, the processed-event store, security filters, and RFC 7807 problem details.
 - **Persistence**: PostgreSQL 16 managed via Flyway append-only migrations.
 - **Cache**: Redis 7 cache-aside for payment lookups with safe fallbacks.
-- **Messaging**: RabbitMQ topic exchange `payments.events`, a dead-letter queue declared for `payment.created`, and transactional-outbox publish retries with jitter. See [docs/architecture.md](docs/architecture.md) for which events have a consumer.
+- **Messaging**: RabbitMQ topic exchange `payments.events`. Created, completed, and cancelled events share `payments.created.notifications`, with listener retry, a dead-letter queue, and publisher confirms on the outbox relay. See [docs/architecture.md](docs/architecture.md).
 - **Security**: Stateless Spring Security Resource Server with RS256 JWT tokens.
 
 ## Quickstart
