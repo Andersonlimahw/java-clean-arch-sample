@@ -119,7 +119,8 @@ Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image 
 | Payments succeed, notifications stay empty | RabbitMQ credentials, exchange `payments.events`, unpublished rows in `outbox_events`. The relay polls about once a second. |
 | 401 on every call | `JWT_ISSUER` / `JWT_AUDIENCE` differ from the token, or the public key does not match the private key. |
 | 409 on `POST /api/v1/payments` | The idempotency key is in progress, or it was reused with a different body. |
-| 409 on confirm | The payment is not `PENDING`. Confirm does not read `Idempotency-Key`. |
+| 409 on confirm | The payment is not `PENDING` (`urn:problem-type:409`), or two updates overlapped and lost the version check (`urn:problem-type:concurrent-modification`). Confirm does not read `Idempotency-Key`. |
+| 503 on confirm or cancel | Deadlock or serialization failure. Honor `Retry-After` and send the same request again. |
 | 429 on login | Auth rate limit. Honor `Retry-After`. |
 | `mkdir .../docker.sock: operation not supported` while tests start Ryuk (macOS Colima) | Export `TESTCONTAINERS_RYUK_DISABLED=true` for that `mvn verify`. Testcontainers 1.21.4 reads the environment variable only; a system property of that name does nothing. Maven does not set it. `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` is the path inside the Colima VM for a run that still starts Ryuk. This suite does not read it once Ryuk is off. |
 | `docker compose` is not found | Commands in this runbook use the V2 plugin (`docker compose`). The V1 binary is `docker-compose`. Same arguments and the same `docker-compose.yml`. |
