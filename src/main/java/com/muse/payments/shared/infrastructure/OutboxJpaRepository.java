@@ -1,9 +1,11 @@
 package com.muse.payments.shared.infrastructure;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,4 +26,14 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxEventEntity, UU
             @Param("now") Instant now,
             @Param("batchSize") int batchSize
     );
+
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            UPDATE outbox_events
+            SET next_attempt_at = :leaseUntil
+            WHERE id = :id
+              AND published_at IS NULL
+            """, nativeQuery = true)
+    int claimUntil(@Param("id") UUID id, @Param("leaseUntil") Instant leaseUntil);
 }

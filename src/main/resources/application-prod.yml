@@ -1,0 +1,16 @@
+# Non-local profile: ECS JSON logs for Kibana / a log collector.
+# Plain text stays the default for local and test.
+# Sampling defaults to 10%. OTLP export stays off until a collector URL is set
+# (OTEL_EXPORTER_OTLP_ENDPOINT is the base URL; OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is the full traces URL).
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:${OTEL_EXPORTER_OTLP_ENDPOINT:}}

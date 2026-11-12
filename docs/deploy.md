@@ -2,7 +2,7 @@
 
 The artifact is the Docker image built from the repository `Dockerfile`. One process serves HTTP, relays the outbox, and consumes notification messages. PostgreSQL is the source of truth. Redis and RabbitMQ are required beside it.
 
-Do not deploy this service to Vercel Functions. The relay and the RabbitMQ listener are loops, not request handlers.
+Do not deploy this service to Vercel Functions. The relay and the RabbitMQ listener are loops, not request handlers. That choice is [ADR 0011](adr/0011-railway-vs-other-hosting.md). Local Compose versus the Kubernetes shape is [ADR 0010](adr/0010-compose-vs-kubernetes.md). The runtime those decisions assume is [the architecture page](architecture.md).
 
 Nothing in this repository creates a Railway, Render, or Google Cloud project. Running those commands spends money and needs a separate decision.
 
@@ -76,7 +76,7 @@ Cost note: an always-on web service plus three data services is the bill. There 
 
 Secrets are `sync: false` and are entered in the dashboard: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`. `JWT_ISSUER`, `JWT_AUDIENCE`, and `RABBITMQ_VHOST` are committed non-secret defaults in `render.yaml`. Leave `SPRING_FLYWAY_ENABLED` unset so this process migrates on startup.
 
-Render does not provide RabbitMQ. Point `RABBITMQ_HOST` at CloudAMQP or another broker. Use Render Postgres or another managed Postgres. Redis is a Render key-value instance or another provider.
+`render.yaml` does not create PostgreSQL, Redis, or RabbitMQ. Point `DB_URL`, the Redis variables, and `RABBITMQ_HOST` at services outside that blueprint. Render does not provide RabbitMQ; use CloudAMQP or another broker.
 
 ## Google Cloud Run
 

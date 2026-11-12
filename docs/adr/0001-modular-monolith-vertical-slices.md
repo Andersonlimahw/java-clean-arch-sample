@@ -1,6 +1,6 @@
 # ADR 0001 — Modular Monolith with Vertical Slices
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0002 (domain) and ADR 0003 (modular monolith)
 - **Date:** 2026-09-13
 - **Project:** `java-journey-muse-lab` (ported from `java-journey-lemon-lab`)
 - **Deciders:** Anderson Lima (Lemon) + Muse Code
@@ -41,7 +41,10 @@ flowchart LR
     T -->|public API only| P
     A --> T
     L --> T
-    T & P & A & L -.->|errors| K
+    T -.->|errors| K
+    P -.->|errors| K
+    A -.->|errors| K
+    L -.->|errors| K
 ```
 
 **Slice rules (enforced by review, documented here):**
@@ -64,13 +67,13 @@ sequenceDiagram
     participant TS as trips::TripService
     participant PS as participants::ParticipantService
     participant DB as H2 (Flyway V1–V4)
-    C->>TC: POST /trips {destination, dates, emails_to_invite}
+    C->>TC: POST /trips with destination, dates, emails_to_invite
     TC->>TS: createTrip(payload)
     TS->>DB: INSERT trips
     TC->>PS: registerParticipantsToEvent(emails, trip)
     PS->>DB: INSERT participants (batch)
-    PS-->>TC: List&lt;Participant&gt; (saved rows only)
-    TC-->>C: 200 {uuid, participants[]}
+    PS-->>TC: saved participant rows only
+    TC-->>C: 200 with uuid and participants
 ```
 
 Package map (each box = one vertical slice, controller on top, DB at bottom):

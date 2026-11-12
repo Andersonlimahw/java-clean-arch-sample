@@ -1,10 +1,17 @@
 package com.muse.payments;
 
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.annotation.DirtiesContext;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
 
+/**
+ * The broker is static and shared by every Spring test in the JVM. A context left open
+ * keeps its notification listener, which would ack messages a later test expects to retry
+ * or dead-letter. Close each context when its class finishes.
+ */
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public abstract class TestcontainersBase {
 
     @ServiceConnection
