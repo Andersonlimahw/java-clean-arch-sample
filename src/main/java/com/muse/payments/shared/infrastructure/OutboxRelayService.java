@@ -3,6 +3,9 @@ package com.muse.payments.shared.infrastructure;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.shared.infrastructure.messaging.RabbitMqConfig;
+import com.muse.payments.shared.infrastructure.observability.W3cTraceContextPropagation;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.ReturnedMessage;
@@ -40,6 +43,8 @@ public class OutboxRelayService {
     private final OutboxJpaRepository outboxRepository;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final W3cTraceContextPropagation traceContext;
+    private final Timer publishLag;
     private final Duration confirmTimeout;
     private final TransactionTemplate transactionTemplate;
 
@@ -47,12 +52,23 @@ public class OutboxRelayService {
             OutboxJpaRepository outboxRepository,
             RabbitTemplate rabbitTemplate,
             ObjectMapper objectMapper,
+            W3cTraceContextPropagation traceContext,
+            MeterRegistry meterRegistry,
             PlatformTransactionManager transactionManager,
             @Value("${app.messaging.confirm-timeout:5s}") Duration confirmTimeout
     ) {
         this.outboxRepository = Objects.requireNonNull(outboxRepository);
         this.rabbitTemplate = Objects.requireNonNull(rabbitTemplate);
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.traceContext = Objects.requireNonNull(traceContext);
+        this.publishLag = Timer.builder("payments.outbox.publish.lag")
+                .description("Time from occurred_at until the outbox row is published")
+                .serviceLevelObjectives(
+                        Duration.ofSeconds(1),
+                        Duration.ofSeconds(10),
+                        Duration.ofSeconds(30),
+                        Duration.ofSeconds(60))
+                .register(meterRegistry);
         this.transactionTemplate = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         if (confirmTimeout == null || confirmTimeout.isZero() || confirmTimeout.isNegative()) {
@@ -113,9 +129,10 @@ public class OutboxRelayService {
     }
 
     private void publish(PublishCandidate event) throws Exception {
-        String correlationId = extractCorrelationId(event.headers());
+        Map<String, Object> headers = readHeaders(event.headers());
+        String correlationId = correlationId(headers);
         CorrelationData correlation = new CorrelationData(UUID.randomUUID().toString());
-        rabbitTemplate.convertAndSend(
+        traceContext.runWithParent(headers, () -> rabbitTemplate.convertAndSend(
                 RabbitMqConfig.EXCHANGE_PAYMENTS,
                 event.routingKey(),
                 event.payload(),
@@ -130,7 +147,7 @@ public class OutboxRelayService {
                     return message;
                 },
                 correlation
-        );
+        ));
         awaitPublisherConfirm(correlation, event.id());
     }
 
@@ -139,7 +156,9 @@ public class OutboxRelayService {
             OutboxEventEntity event = outboxRepository.findById(eventId)
                     .orElseThrow(() -> new IllegalStateException("Outbox event disappeared: " + eventId));
             if (event.getPublishedAt() == null) {
-                event.setPublishedAt(Instant.now());
+                Instant publishedAt = Instant.now();
+                event.setPublishedAt(publishedAt);
+                recordPublishLag(event.getOccurredAt(), publishedAt);
             }
         });
     }
@@ -214,18 +233,30 @@ public class OutboxRelayService {
         };
     }
 
-    private String extractCorrelationId(String headersJson) {
+    private void recordPublishLag(Instant occurredAt, Instant publishedAt) {
+        if (occurredAt == null || publishedAt == null) {
+            return;
+        }
+        Duration lag = Duration.between(occurredAt, publishedAt);
+        publishLag.record(lag.isNegative() ? Duration.ZERO : lag);
+    }
+
+    private Map<String, Object> readHeaders(String headersJson) {
         if (headersJson == null || headersJson.isBlank()) {
-            return UUID.randomUUID().toString();
+            return Map.of();
         }
         try {
-            Map<String, Object> headers = objectMapper.readValue(headersJson, new TypeReference<>() {});
-            Object correlationId = headers.get("correlationId");
-            if (correlationId != null && !correlationId.toString().isBlank()) {
-                return correlationId.toString();
-            }
+            return objectMapper.readValue(headersJson, new TypeReference<>() {});
         } catch (Exception e) {
             log.warn("Failed to parse outbox headers JSON: {}", headersJson);
+            return Map.of();
+        }
+    }
+
+    private String correlationId(Map<String, Object> headers) {
+        Object correlationId = headers.get("correlationId");
+        if (correlationId != null && !correlationId.toString().isBlank()) {
+            return correlationId.toString();
         }
         return UUID.randomUUID().toString();
     }

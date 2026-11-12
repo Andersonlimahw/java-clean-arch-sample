@@ -1,0 +1,127 @@
+# Overlay for local tracing and metrics.
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+# Elasticsearch and Kibana are behind the "logs" profile (512 MB heap).
+# That profile only starts the search UI. It does not ship stdout and does not enable ECS JSON.
+# ECS JSON is the prod profile; point a shipper you already run at that stdout.
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile logs up -d
+services:
+  app:
+    environment:
+      # OTEL base URL. The app appends /v1/traces.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  otel-collector:
+    build:
+      context: ./deploy/observability/docker
+      dockerfile: otel-collector.Dockerfile
+    image: payments-otel-collector:0.114.0
+    container_name: payments-otel-collector
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./deploy/observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/busybox", "wget", "-q", "-O", "-", "http://127.0.0.1:13133/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  jaeger:
+    build:
+      context: ./deploy/observability/docker
+      dockerfile: jaeger.Dockerfile
+    image: payments-jaeger:1.62.0
+    container_name: payments-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      ADMIN_HTTP_HOST_PORT: ":14269"
+    ports:
+      - "127.0.0.1:16686:16686"
+    healthcheck:
+      test: ["CMD", "/bin/busybox", "wget", "-q", "-O", "-", "http://127.0.0.1:14269/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: payments-prometheus
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: payments-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-payments}
+      # Not the well-known admin/admin pair. Loopback only; override for a shared machine.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local-observability-only}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    profiles: ["logs"]
+    container_name: payments-elasticsearch
+    environment:
+      discovery.type: single-node
+      # Local loopback only. Security stays off, so Kibana on 127.0.0.1 needs no credentials.
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    profiles: ["logs"]
+    container_name: payments-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:5601/api/status >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 16
+      start_period: 60s

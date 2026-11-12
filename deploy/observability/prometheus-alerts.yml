@@ -1,0 +1,71 @@
+groups:
+  - name: payments-platform
+    rules:
+      - alert: OutboxPendingHigh
+        expr: max(payments_outbox_pending) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Outbox backlog is above 100 unpublished events
+          description: The relay is not keeping up with commits. Check RabbitMQ and payments_outbox_lag_seconds. max() folds the same backlog reported by every replica.
+
+      - alert: OutboxLagHigh
+        expr: max(payments_outbox_lag_seconds) > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Oldest unpublished outbox event is older than 60 seconds
+          description: This gauge is the age of the oldest unpublished row, not the publish-lag percentile. Investigate the relay and broker confirms.
+
+      - alert: OutboxPublishLagHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(payments_outbox_publish_lag_seconds_bucket[5m]))
+          ) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 95th percentile outbox publish lag is above 30 seconds
+          description: Measured from occurred_at until the row is marked published. The oldest-row gauge pages separately at 60 seconds.
+
+      - alert: NotificationDlqNotEmpty
+        expr: max by (role) (payments_queue_messages{role="dlq"}) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Notification DLQ has messages
+          description: Permanent or exhausted failures need an operator. Do not claim they were processed.
+
+      - alert: PaymentReadLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_requests_seconds_bucket{method="GET",uri="/api/v1/payments/{id}"}[5m])
+            )
+          ) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p95 of GET /api/v1/payments/{id} is above 300 ms
+          description: Uses the http.server.requests SLO buckets (100ms, 300ms, 500ms, 1s). uri is the MVC pattern.
+
+      - alert: ApiErrorRateHigh
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            /
+            sum(rate(http_server_requests_seconds_count[5m]))
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: HTTP 5xx ratio is above 1%
+          description: Availability SLO is 99.5% over 30 days. This is an early signal, not the SLO itself.
