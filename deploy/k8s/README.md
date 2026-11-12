@@ -15,7 +15,7 @@ Base in `deploy/k8s/base`, overlays in `deploy/k8s/overlays/staging` and `produc
 | `pdb.yaml` | PodDisruptionBudget | `minAvailable: 1`. With staging's single replica, a voluntary eviction waits until another pod is up. |
 | `ingress.yaml` | Ingress | TLS via cert-manager (`letsencrypt-prod`) and nginx. Backend is Service port 80. |
 | `networkpolicy.yaml` | NetworkPolicy | Selects pods labeled `app.kubernetes.io/name: payments-platform`. Ingress allows TCP 8080 from every namespace (`namespaceSelector: {}`). Egress is unrestricted so managed PostgreSQL, Redis, and RabbitMQ outside the cluster stay reachable. The migration Job is not selected; its label is `app.kubernetes.io/component: migration`. |
-| `flyway-job.yaml` | Job | Same image. `SPRING_FLYWAY_ENABLED=true` and `APP_MIGRATION_ONLY=true`. The process runs Flyway and exits. The Job reaches Complete only after that exit. |
+| `flyway-job.yaml` | Job | Name `payments-flyway-migration`. Same image. Env `SPRING_FLYWAY_ENABLED=true` and `APP_MIGRATION_ONLY=true` (profile `migration`). Exits `0` only after Flyway has applied the schema and left nothing pending, with HTTP, Rabbit listeners, and the outbox scheduler off. Any other exit fails the container; `backoffLimit` is 3. |
 
 ## Image
 

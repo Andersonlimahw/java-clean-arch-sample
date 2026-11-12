@@ -197,6 +197,9 @@ while IFS= read -r job_name; do
   fi
 done < "$workdir/jobs.txt"
 kubectl apply -f "$workdir/03-job.yaml"
+# Rendered name is payments-flyway-migration (deploy/k8s/base/flyway-job.yaml).
+# Complete means the container exited 0: Flyway applied the schema, nothing is
+# pending, and HTTP, Rabbit listeners, and the outbox scheduler stayed off.
 while IFS= read -r job_name; do
   if [[ -n "$job_name" ]]; then
     kubectl -n "$namespace" wait --for=condition=complete "job/$job_name" --timeout=180s

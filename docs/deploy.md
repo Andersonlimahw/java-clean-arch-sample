@@ -21,7 +21,7 @@ Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env
 | `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | yes outside local/test | PEM. PKCS#8 private key and X.509 public key. Generate with `scripts/generate-jwt-keys.sh`. Paste single-line values with `\n` escapes. |
 | `JWT_ISSUER` / `JWT_AUDIENCE` | yes | Must match token checks. Defaults are in `application.yml`. |
 | `MANAGEMENT_OTLP_TRACING_ENDPOINT` | no | Full OTLP HTTP traces URL, for example `http://collector:4318/v1/traces`. Spring Boot creates the exporter only when this is set. |
-| `APP_MIGRATION_ONLY` | k8s Job | `true` runs Flyway, does not serve HTTP or consume messages, then exits. |
+| `APP_MIGRATION_ONLY` | k8s Job | `true` activates the `migration` profile (`application-migration.yml`). The process applies Flyway, does not serve HTTP, and does not start Rabbit listeners or the outbox scheduler. Exit `0` only when Flyway has applied the schema and nothing is pending. Startup or migration failure exits non-zero. `--app.migration-only=false` on the command line overrides a `true` environment variable. |
 | `SPRING_FLYWAY_ENABLED` | k8s only | Leave unset on Railway, Render, and Cloud Run so startup migrations stay on (`application.yml` defaults `enabled: true`). The Kubernetes API ConfigMap sets `false`. The migration Job sets `true`. |
 
 `prod` without JWT PEMs refuses to start. That is intentional.
@@ -101,7 +101,7 @@ kustomize build deploy/k8s/overlays/staging | kubeconform -strict -kubernetes-ve
 kustomize build deploy/k8s/overlays/production | kubeconform -strict -kubernetes-version 1.30.0 -summary
 ```
 
-Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image is loaded. The script creates the namespace and ConfigMap, applies the Secret, waits until the migration Job completes, then applies the Deployment. See the Kubernetes README for the exact command. The API ConfigMap sets `SPRING_FLYWAY_ENABLED=false`. The Job sets `APP_MIGRATION_ONLY=true`, which forces Flyway on and exits when migrations finish.
+Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image is loaded. The script creates the namespace and ConfigMap, applies the Secret, waits until the migration Job completes, then applies the Deployment. See the Kubernetes README for the exact command. The API ConfigMap sets `SPRING_FLYWAY_ENABLED=false`. The Job `payments-flyway-migration` in `deploy/k8s/base/flyway-job.yaml` sets `SPRING_FLYWAY_ENABLED=true` and `APP_MIGRATION_ONLY=true`. That flag forces Flyway on above the ConfigMap, skips HTTP, Rabbit listeners, and the outbox scheduler, and exits `0` only when the schema is applied and nothing is pending. `scripts/k8s-apply.sh` waits with `kubectl wait --for=condition=complete job/payments-flyway-migration --timeout=180s`. A non-zero exit fails the Job (`backoffLimit: 3`).
 
 ## Rollback
 
