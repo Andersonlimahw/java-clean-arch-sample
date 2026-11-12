@@ -1,6 +1,6 @@
 -- PAYMENTS_LIST_INDEX_VERSION=V6
--- Renumber this file (and its .conf) before merge if version 6 is already taken.
--- PR #15 (open against main 745f822) also ships V6__payment_version.sql.
+-- Renumber this file and its .conf before merge if another migration with this
+-- version reaches main first.
 -- Do not edit this script after it has been applied to a shared database.
 -- Depends only on payments from V3. No other migration is required.
 --

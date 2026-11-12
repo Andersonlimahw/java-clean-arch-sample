@@ -219,8 +219,8 @@ public class PaymentController {
     })
     public ResponseEntity<PageResponse<PaymentResponse>> listPayments(
             @Parameter(
-                    description = "Zero-based page index. Default 0. Must be >= 0, and page * size must be <= 10000. Larger offsets are 400, including values whose product exceeds Integer.MAX_VALUE.",
-                    schema = @Schema(type = "integer", minimum = "0", maximum = "10000", defaultValue = "0")
+                    description = "Zero-based page index. Default 0. Must be an integer >= 0. There is no fixed maximum on page alone: page * size must be <= 10000. page=10000 with size=1 is valid; page=101 with size=100 is 400. A product above 10000, including one past Integer.MAX_VALUE, is 400.",
+                    schema = @Schema(type = "integer", minimum = "0", defaultValue = "0")
             )
             @RequestParam(defaultValue = "0") int page,
             @Parameter(
