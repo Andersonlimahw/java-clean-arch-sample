@@ -9,6 +9,7 @@ import com.muse.payments.shared.infrastructure.messaging.RabbitMqConfig;
 import com.muse.payments.shared.web.CorrelationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -42,9 +43,10 @@ public class PaymentNotificationConsumer {
 
     @RabbitListener(queues = RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS)
     @Transactional
-    public void onPaymentCreated(
+    public void onPaymentEvent(
             @Payload String payloadJson,
             @Header(name = "X-Event-Id", required = false) String eventIdHeader,
+            @Header(name = "X-Event-Type", required = false) String eventTypeHeader,
             @Header(name = "X-Correlation-Id", required = false) String correlationId
     ) {
         if (correlationId != null && !correlationId.isBlank()) {
@@ -52,7 +54,7 @@ public class PaymentNotificationConsumer {
         }
 
         try {
-            Map<String, Object> data = objectMapper.readValue(payloadJson, new TypeReference<>() {});
+            Map<String, Object> data = readPayload(payloadJson);
             UUID eventId = resolveEventId(eventIdHeader, data);
 
             boolean isNewEvent = processedEventStore.tryMarkProcessed(CONSUMER_NAME, eventId);
@@ -61,44 +63,122 @@ public class PaymentNotificationConsumer {
                 return;
             }
 
-            Object paymentIdObj = data.get("paymentId");
-            Object userIdObj = data.get("userId");
-            Object amountObj = data.get("amount");
-            Object currencyObj = data.get("currency");
-
-            if (paymentIdObj == null || userIdObj == null || amountObj == null || currencyObj == null) {
-                log.warn("Invalid PaymentCreated payload missing required attributes: {}. Discarding message.", payloadJson);
-                return;
-            }
-
-            UUID paymentId = UUID.fromString(paymentIdObj.toString());
-            UUID userId = UUID.fromString(userIdObj.toString());
-            BigDecimal amount = new BigDecimal(amountObj.toString());
-            String currency = currencyObj.toString();
-
-            Notification notification = Notification.paymentCreated(userId, paymentId, amount, currency);
+            String eventType = (eventTypeHeader == null || eventTypeHeader.isBlank())
+                    ? "PaymentCreated"
+                    : eventTypeHeader;
+            Notification notification = toNotification(eventType, data);
             notificationRepository.save(notification);
 
-            log.info("Created notification {} for payment {} and user {}", notification.getId(), paymentId, userId);
+            log.info("Created {} notification {} for payment {} and user {}",
+                    notification.getType(), notification.getId(), notification.getPaymentId(), notification.getUserId());
+        } catch (AmqpRejectAndDontRequeueException ex) {
+            throw ex;
         } catch (Exception ex) {
-            log.error("Failed to process PaymentCreated notification message: {}", ex.getMessage(), ex);
-            throw new RuntimeException("Error processing PaymentCreated event", ex);
+            log.error("Failed to process payment notification message: {}", ex.getMessage(), ex);
+            throw new RuntimeException("Error processing payment event", ex);
         } finally {
             CorrelationContext.clear();
         }
     }
 
+    /**
+     * Kept for callers and tests that redeliver a PaymentCreated payload without an event-type header.
+     */
+    @Transactional
+    public void onPaymentCreated(String payloadJson, String eventIdHeader, String correlationId) {
+        onPaymentEvent(payloadJson, eventIdHeader, "PaymentCreated", correlationId);
+    }
+
+    private Map<String, Object> readPayload(String payloadJson) {
+        try {
+            return objectMapper.readValue(payloadJson, new TypeReference<>() {});
+        } catch (Exception ex) {
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: payload is not JSON", ex);
+        }
+    }
+
+    private Notification toNotification(String eventType, Map<String, Object> data) {
+        UUID paymentId = requiredUuid(data, "paymentId");
+        UUID userId = requiredUuid(data, "userId");
+        return switch (eventType) {
+            case "PaymentCreated" -> Notification.paymentCreated(
+                    userId,
+                    paymentId,
+                    requiredDecimal(data, "amount"),
+                    requiredText(data, "currency")
+            );
+            case "PaymentCompleted" -> Notification.paymentCompleted(userId, paymentId);
+            case "PaymentCancelled" -> Notification.paymentCancelled(
+                    userId,
+                    paymentId,
+                    data.get("reason") == null ? "" : data.get("reason").toString()
+            );
+            default -> throw new AmqpRejectAndDontRequeueException("Permanent failure: unsupported event type " + eventType);
+        };
+    }
+
+    private UUID requiredUuid(Map<String, Object> data, String field) {
+        Object value = data.get(field);
+        if (value == null || value.toString().isBlank()) {
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: missing " + field);
+        }
+        try {
+            return UUID.fromString(value.toString());
+        } catch (IllegalArgumentException ex) {
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: invalid " + field, ex);
+        }
+    }
+
+    private BigDecimal requiredDecimal(Map<String, Object> data, String field) {
+        Object value = data.get(field);
+        if (value == null || value.toString().isBlank()) {
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: missing " + field);
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException ex) {
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: invalid " + field, ex);
+        }
+    }
+
+    private String requiredText(Map<String, Object> data, String field) {
+        Object value = data.get(field);
+        if (value == null || value.toString().isBlank()) {
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: missing " + field);
+        }
+        return value.toString();
+    }
+
     private UUID resolveEventId(String eventIdHeader, Map<String, Object> data) {
-        if (eventIdHeader != null && !eventIdHeader.isBlank()) {
-            try {
-                return UUID.fromString(eventIdHeader);
-            } catch (IllegalArgumentException ignored) {
-            }
+        UUID fromHeader = parseUuidOrNull(eventIdHeader);
+        if (fromHeader != null) {
+            return fromHeader;
         }
         Object eventIdObj = data.get("eventId");
         if (eventIdObj != null) {
-            return UUID.fromString(eventIdObj.toString());
+            UUID fromBody = parseUuidOrNull(eventIdObj.toString());
+            if (fromBody != null) {
+                return fromBody;
+            }
         }
-        return UUID.fromString(data.get("paymentId").toString());
+        Object paymentId = data.get("paymentId");
+        if (paymentId != null) {
+            UUID fromPayment = parseUuidOrNull(paymentId.toString());
+            if (fromPayment != null) {
+                return fromPayment;
+            }
+        }
+        throw new AmqpRejectAndDontRequeueException("Permanent failure: event id is missing or invalid");
+    }
+
+    private UUID parseUuidOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 }

@@ -7,12 +7,21 @@ import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.retry.backoff.ExponentialRandomBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+
+import java.util.Map;
 
 @Configuration
 public class RabbitMqConfig {
@@ -24,6 +33,8 @@ public class RabbitMqConfig {
     public static final String QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ = "payments.created.notifications.dlq";
 
     public static final String ROUTING_KEY_PAYMENT_CREATED = "payment.created";
+    public static final String ROUTING_KEY_PAYMENT_COMPLETED = "payment.completed";
+    public static final String ROUTING_KEY_PAYMENT_CANCELLED = "payment.cancelled";
     public static final String ROUTING_KEY_PAYMENT_CREATED_DLQ = "payment.created.dlq";
 
     @Bean
@@ -57,6 +68,20 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public Binding paymentCompletedBinding(Queue paymentCreatedNotificationsQueue, TopicExchange paymentsExchange) {
+        return BindingBuilder.bind(paymentCreatedNotificationsQueue)
+                .to(paymentsExchange)
+                .with(ROUTING_KEY_PAYMENT_COMPLETED);
+    }
+
+    @Bean
+    public Binding paymentCancelledBinding(Queue paymentCreatedNotificationsQueue, TopicExchange paymentsExchange) {
+        return BindingBuilder.bind(paymentCreatedNotificationsQueue)
+                .to(paymentsExchange)
+                .with(ROUTING_KEY_PAYMENT_CANCELLED);
+    }
+
+    @Bean
     public Binding paymentCreatedDlqBinding(Queue paymentCreatedNotificationsDlq, DirectExchange paymentsDlxExchange) {
         return BindingBuilder.bind(paymentCreatedNotificationsDlq)
                 .to(paymentsDlxExchange)
@@ -64,14 +89,42 @@ public class RabbitMqConfig {
     }
 
     @Bean
-    public org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory,
-            MessageConverter messageConverter
+            MessageConverter messageConverter,
+            @Value("${app.messaging.listener-max-attempts:5}") int maxAttempts,
+            @Value("${app.messaging.listener-initial-interval-ms:500}") long initialIntervalMs,
+            @Value("${app.messaging.listener-multiplier:2.0}") double multiplier,
+            @Value("${app.messaging.listener-max-interval-ms:10000}") long maxIntervalMs
     ) {
-        org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory factory = new org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory();
+        ExponentialRandomBackOffPolicy backOff = new ExponentialRandomBackOffPolicy();
+        backOff.setInitialInterval(initialIntervalMs);
+        backOff.setMultiplier(multiplier);
+        backOff.setMaxInterval(maxIntervalMs);
+
+        // Permanent failures skip the backoff and go straight to the DLQ.
+        // Transient failures (broker, database) are retried with jitter.
+        SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(
+                maxAttempts,
+                Map.of(
+                        MessageConversionException.class, Boolean.FALSE,
+                        org.springframework.amqp.AmqpRejectAndDontRequeueException.class, Boolean.FALSE
+                ),
+                true,
+                true
+        );
+
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(messageConverter);
         factory.setRecoveryInterval(3000L);
+        factory.setDefaultRequeueRejected(false);
+        factory.setObservationEnabled(true);
+        factory.setAdviceChain(RetryInterceptorBuilder.stateless()
+                .retryPolicy(retryPolicy)
+                .backOffPolicy(backOff)
+                .recoverer(new RejectAndDontRequeueRecoverer())
+                .build());
         return factory;
     }
 
@@ -85,6 +138,7 @@ public class RabbitMqConfig {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(messageConverter);
         template.setMandatory(true);
+        template.setObservationEnabled(true);
         return template;
     }
 }

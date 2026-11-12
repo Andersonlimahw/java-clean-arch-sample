@@ -40,6 +40,31 @@ public class Notification {
         return new Notification(id, userId, paymentId, "PAYMENT_CREATED", title, message, Instant.now());
     }
 
+    public static Notification paymentCompleted(UUID userId, UUID paymentId) {
+        return new Notification(
+                UUID.randomUUID(),
+                userId,
+                paymentId,
+                "PAYMENT_COMPLETED",
+                "Payment Completed",
+                "Payment " + paymentId + " was completed.",
+                Instant.now()
+        );
+    }
+
+    public static Notification paymentCancelled(UUID userId, UUID paymentId, String reason) {
+        String why = reason == null || reason.isBlank() ? "no reason provided" : reason;
+        return new Notification(
+                UUID.randomUUID(),
+                userId,
+                paymentId,
+                "PAYMENT_CANCELLED",
+                "Payment Cancelled",
+                "Payment " + paymentId + " was cancelled: " + why,
+                Instant.now()
+        );
+    }
+
     public UUID getId() {
         return id;
     }
