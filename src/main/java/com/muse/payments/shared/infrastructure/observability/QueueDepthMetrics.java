@@ -21,8 +21,8 @@ public class QueueDepthMetrics {
     private static final Logger log = LoggerFactory.getLogger(QueueDepthMetrics.class);
 
     public QueueDepthMetrics(MeterRegistry meterRegistry, AmqpAdmin amqpAdmin) {
-        register(meterRegistry, amqpAdmin, RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS, "main");
-        register(meterRegistry, amqpAdmin, RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ, "dlq");
+        register(meterRegistry, amqpAdmin, RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS, "main");
+        register(meterRegistry, amqpAdmin, RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS_DLQ, "dlq");
     }
 
     private static void register(MeterRegistry meterRegistry, AmqpAdmin amqpAdmin, String queue, String role) {

@@ -84,8 +84,8 @@ class ObservabilityMetricsIT extends TestcontainersBase {
         assertThat(meterRegistry.find("payments.outbox.attempts").gauge()).isNotNull();
         assertThat(meterRegistry.find("payments.outbox.publish.lag").timer()).isNotNull();
 
-        var dlq = queueGauge("dlq", RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ);
-        var main = queueGauge("main", RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS);
+        var dlq = queueGauge("dlq", RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS_DLQ);
+        var main = queueGauge("main", RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS);
 
         assertThat(dlq).isNotNull();
         assertThat(main).isNotNull();
@@ -126,17 +126,17 @@ class ObservabilityMetricsIT extends TestcontainersBase {
     @Test
     @DisplayName("The DLQ gauge increases when a message is queued")
     void dlqGaugeFollowsQueuedMessages() {
-        var dlq = queueGauge("dlq", RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ);
+        var dlq = queueGauge("dlq", RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS_DLQ);
         double before = dlq.value();
 
         try {
-            rabbitTemplate.convertAndSend("", RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ, "probe");
+            rabbitTemplate.convertAndSend("", RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS_DLQ, "probe");
             Awaitility.await()
                     .atMost(Duration.ofSeconds(5))
                     .untilAsserted(() -> assertThat(dlq.value()).isGreaterThanOrEqualTo(before + 1d));
         } finally {
             rabbitTemplate.execute(channel -> {
-                channel.queuePurge(RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ);
+                channel.queuePurge(RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS_DLQ);
                 return null;
             });
         }
