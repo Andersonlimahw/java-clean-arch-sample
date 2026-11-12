@@ -1,6 +1,7 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -8,7 +9,15 @@ public interface IdempotencyRepository {
 
     Optional<IdempotencyRecord> find(UUID userId, String key);
 
-    boolean tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl);
+    /**
+     * Inserts a processing row, or reclaims one that is already expired.
+     * Empty when a live row still owns the key.
+     */
+    Optional<UUID> tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl);
 
-    void markCompleted(UUID userId, String key, int responseCode, String responseBodyJson);
+    int markCompleted(UUID userId, String key, String requestHash, UUID leaseId, int responseCode, String responseBodyJson);
+
+    int deleteProcessing(UUID userId, String key, String requestHash, UUID leaseId);
+
+    int deleteExpired(Instant now, int limit);
 }

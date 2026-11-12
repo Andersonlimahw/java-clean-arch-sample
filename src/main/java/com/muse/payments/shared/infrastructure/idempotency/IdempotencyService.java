@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
@@ -16,6 +17,7 @@ import java.util.UUID;
 public class IdempotencyService {
 
     public static final Duration DEFAULT_TTL = Duration.ofHours(24);
+
     private final IdempotencyRepository repository;
 
     public IdempotencyService(IdempotencyRepository repository) {
@@ -40,19 +42,25 @@ public class IdempotencyService {
         Objects.requireNonNull(key, "key must not be null");
 
         String requestHash = computeHash(payloadJson);
-        boolean acquired = repository.tryInsertProcessing(userId, key, requestHash, ttl != null ? ttl : DEFAULT_TTL);
+        Duration effectiveTtl = ttl != null ? ttl : DEFAULT_TTL;
 
-        if (acquired) {
-            return IdempotencyDecision.proceed();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Optional<UUID> leaseId = repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl);
+            if (leaseId.isPresent()) {
+                return IdempotencyDecision.proceed(leaseId.get());
+            }
+
+            Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
+            if (optionalRecord.isEmpty() || optionalRecord.get().isExpired(Instant.now())) {
+                continue;
+            }
+            return decisionForLiveRecord(optionalRecord.get(), requestHash, key);
         }
 
-        Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
-        if (optionalRecord.isEmpty()) {
-            // Race condition where record was removed or expired between insert attempt and lookup
-            return IdempotencyDecision.proceed();
-        }
+        throw new ConflictException("Concurrent request in progress for idempotency key: " + key);
+    }
 
-        IdempotencyRecord record = optionalRecord.get();
+    private IdempotencyDecision decisionForLiveRecord(IdempotencyRecord record, String requestHash, String key) {
         if (record.isProcessing()) {
             throw new ConflictException("Concurrent request in progress for idempotency key: " + key);
         }
@@ -67,10 +75,19 @@ public class IdempotencyService {
             );
         }
 
-        return IdempotencyDecision.proceed();
+        throw new ConflictException("Idempotency key cannot be reused while it is unexpired: " + key);
     }
 
-    public void saveCompleted(UUID userId, String key, int statusCode, String responseJson) {
-        repository.markCompleted(userId, key, statusCode, responseJson);
+    public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, int statusCode, String responseJson) {
+        Objects.requireNonNull(leaseId, "leaseId must not be null");
+        int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, statusCode, responseJson);
+        if (updated != 1) {
+            throw new IllegalStateException("Idempotency completion matched no row for key: " + key);
+        }
+    }
+
+    public void releaseProcessing(UUID userId, String key, String payloadJson, UUID leaseId) {
+        Objects.requireNonNull(leaseId, "leaseId must not be null");
+        repository.deleteProcessing(userId, key, computeHash(payloadJson), leaseId);
     }
 }

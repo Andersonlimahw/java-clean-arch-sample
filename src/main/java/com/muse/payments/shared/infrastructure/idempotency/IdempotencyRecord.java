@@ -1,6 +1,7 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 public record IdempotencyRecord(
@@ -22,5 +23,10 @@ public record IdempotencyRecord(
 
     public boolean isProcessing() {
         return STATUS_PROCESSING.equalsIgnoreCase(status);
+    }
+
+    public boolean isExpired(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        return expiresAt == null || !expiresAt.isAfter(now);
     }
 }

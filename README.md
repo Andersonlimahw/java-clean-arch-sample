@@ -10,7 +10,7 @@ Diagrams, the HTTP contract, and the consistency model: [docs/architecture.md](d
 Trade-offs: [docs/adr](docs/adr/README.md).
 
 - **Modular Monolith**: base package `com.muse.payments` with verifiable architectural boundaries.
-  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Endpoints require a valid bearer token and do not authorize by role.
+  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Payment routes require `USER` or `ADMIN`. Other authenticated routes do not authorize by role.
   - `payments`: Payment aggregate root, state machine (PENDING → COMPLETED / CANCELLED), idempotency key deduplication, and optimistic locking.
   - `notifications`: Event-driven notification dispatch via RabbitMQ with idempotent consumer (`processed_events`).
   - `shared`: Common domain building blocks, the outbox port, the processed-event store, security filters, and RFC 7807 problem details.
@@ -18,6 +18,23 @@ Trade-offs: [docs/adr](docs/adr/README.md).
 - **Cache**: Redis 7 cache-aside for payment lookups with safe fallbacks.
 - **Messaging**: RabbitMQ topic exchange `payments.events`. Created, completed, and cancelled events share `payments.created.notifications`, with listener retry, a dead-letter queue, and publisher confirms on the outbox relay. See [docs/architecture.md](docs/architecture.md).
 - **Security**: Stateless Spring Security Resource Server with RS256 JWT tokens.
+
+## Authorization
+
+Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_ADMIN`. A missing or invalid token is **401**. A known token whose role is not allowed is **403** `application/problem+json`. Ownership misses on payments stay **404** so callers cannot tell whether another user's payment exists.
+
+| Endpoint | Who can call it | Ownership |
+|---|---|---|
+| `POST /api/v1/auth/**` | Public | — |
+| `POST /api/v1/payments` | `USER` or `ADMIN` | The caller owns the payment that is created |
+| `GET /api/v1/payments/{id}` | `USER` or `ADMIN` | Owner, or any payment when the caller is `ADMIN`. Another user's payment is **404** |
+| `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN` |
+| `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
+| `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
+| `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
+| Actuator health, info, prometheus, and OpenAPI | Public | — |
+
+`Idempotency-Key` on `POST /api/v1/payments` is kept for 24 hours. After `expires_at`, the same key is a new request. A failed create releases that attempt so the key can be retried. Completing a key updates only the unexpired `PROCESSING` row for the lease acquired by that attempt. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until none remain; the run interval is `app.idempotency.cleanup-interval-ms` (default 1 hour). The lookup index is `idx_idempotency_expires` from `V1__shared_outbox_inbox.sql`.
 
 ## Quickstart
 

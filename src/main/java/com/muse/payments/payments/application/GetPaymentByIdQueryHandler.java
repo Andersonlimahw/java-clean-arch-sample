@@ -31,7 +31,7 @@ public class GetPaymentByIdQueryHandler implements QueryHandler<GetPaymentByIdQu
             return PaymentResponse.from(payment);
         });
 
-        if (!response.userId().equals(query.userId())) {
+        if (!query.adminRead() && !response.userId().equals(query.userId())) {
             throw new EntityNotFoundException("Payment not found with id: " + query.paymentId());
         }
 

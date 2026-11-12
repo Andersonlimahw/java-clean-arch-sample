@@ -38,7 +38,9 @@ jobs:
         run: docker compose config
 
       - name: Validate Kubernetes Manifests with Kubeconform
-        uses: docker://ghcr.io/yannh/kubeconform:latest
-        with:
-          entrypoint: /bin/sh
-          args: -c "kustomize build deploy/k8s/overlays/staging | kubeconform -strict -kubernetes-version 1.30.0 -summary && kustomize build deploy/k8s/overlays/production | kubeconform -strict -kubernetes-version 1.30.0 -summary"
+        run: |
+          # ghcr.io/yannh/kubeconform is distroless: it has neither /bin/sh nor kustomize.
+          curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz" | tar -xz -C /tmp
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz" | tar -xz -C /tmp
+          /tmp/kustomize build deploy/k8s/overlays/staging | /tmp/kubeconform -strict -kubernetes-version 1.30.0 -summary
+          /tmp/kustomize build deploy/k8s/overlays/production | /tmp/kubeconform -strict -kubernetes-version 1.30.0 -summary
