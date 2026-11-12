@@ -65,6 +65,8 @@ management:
           include: readinessState,db
 
 app:
+  idempotency:
+    cleanup-interval-ms: 3600000
   jwt:
     issuer: ${JWT_ISSUER:https://api.payments.muse.com}
     audience: ${JWT_AUDIENCE:payments-api}

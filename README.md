@@ -16,6 +16,23 @@ Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **C
 - **Messaging**: RabbitMQ with topic exchanges, DLQ, exponential retry with jitter, and Transactional Outbox.
 - **Security**: Stateless Spring Security Resource Server with RS256 JWT tokens.
 
+## Authorization
+
+Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_ADMIN`. A missing or invalid token is **401**. A known token whose role is not allowed is **403** `application/problem+json`. Ownership misses on payments stay **404** so callers cannot tell whether another user's payment exists.
+
+| Endpoint | Who can call it | Ownership |
+|---|---|---|
+| `POST /api/v1/auth/**` | Public | — |
+| `POST /api/v1/payments` | `USER` or `ADMIN` | The caller owns the payment that is created |
+| `GET /api/v1/payments/{id}` | `USER` or `ADMIN` | Owner, or any payment when the caller is `ADMIN`. Another user's payment is **404** |
+| `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN` |
+| `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
+| `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
+| `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
+| Actuator health, info, prometheus, and OpenAPI | Public | — |
+
+`Idempotency-Key` on `POST /api/v1/payments` is kept for 24 hours. After `expires_at`, the same key is a new request. A scheduled job deletes expired rows in batches (`app.idempotency.cleanup-interval-ms`, default 1 hour) and skips rows locked by another instance. The lookup index is `idx_idempotency_expires` from `V1__shared_outbox_inbox.sql`.
+
 ## Quickstart
 
 ### Prerequisites

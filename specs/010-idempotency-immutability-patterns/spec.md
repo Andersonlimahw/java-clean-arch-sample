@@ -60,6 +60,9 @@ stateDiagram-v2
   3. **Concurrent Lock** (`status == IN_PROGRESS` and `now < expires_at`):
      - Reject with `HTTP 409 Conflict` (or `HTTP 429 Too Many Requests`).
      - Detail: `"A request with this idempotency key is currently being processed."`
+  4. **Expired key** (`expires_at <= now`, any status):
+     - Treat the key as new. The insert reclaims the existing row only when it is already expired, so a live row and a concurrent reclaim cannot both proceed.
+     - A scheduled cleanup deletes expired rows in bounded batches and skips rows locked by another instance. Lookup uses `idx_idempotency_expires`.
 
 ---
 

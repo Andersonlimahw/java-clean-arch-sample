@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record GetPaymentByIdQuery(
         UUID paymentId,
-        UUID userId
+        UUID userId,
+        boolean adminRead
 ) implements Query<PaymentResponse> {
 }

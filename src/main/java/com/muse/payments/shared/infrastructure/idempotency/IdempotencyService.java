@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,19 +41,24 @@ public class IdempotencyService {
         Objects.requireNonNull(key, "key must not be null");
 
         String requestHash = computeHash(payloadJson);
-        boolean acquired = repository.tryInsertProcessing(userId, key, requestHash, ttl != null ? ttl : DEFAULT_TTL);
+        Duration effectiveTtl = ttl != null ? ttl : DEFAULT_TTL;
 
-        if (acquired) {
-            return IdempotencyDecision.proceed();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            if (repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl)) {
+                return IdempotencyDecision.proceed();
+            }
+
+            Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
+            if (optionalRecord.isEmpty() || optionalRecord.get().isExpired(Instant.now())) {
+                continue;
+            }
+            return decisionForLiveRecord(optionalRecord.get(), requestHash, key);
         }
 
-        Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
-        if (optionalRecord.isEmpty()) {
-            // Race condition where record was removed or expired between insert attempt and lookup
-            return IdempotencyDecision.proceed();
-        }
+        throw new ConflictException("Concurrent request in progress for idempotency key: " + key);
+    }
 
-        IdempotencyRecord record = optionalRecord.get();
+    private IdempotencyDecision decisionForLiveRecord(IdempotencyRecord record, String requestHash, String key) {
         if (record.isProcessing()) {
             throw new ConflictException("Concurrent request in progress for idempotency key: " + key);
         }
@@ -70,7 +76,7 @@ public class IdempotencyService {
         return IdempotencyDecision.proceed();
     }
 
-    public void saveCompleted(UUID userId, String key, int statusCode, String responseJson) {
-        repository.markCompleted(userId, key, statusCode, responseJson);
+    public void saveCompleted(UUID userId, String key, String payloadJson, int statusCode, String responseJson) {
+        repository.markCompleted(userId, key, computeHash(payloadJson), statusCode, responseJson);
     }
 }

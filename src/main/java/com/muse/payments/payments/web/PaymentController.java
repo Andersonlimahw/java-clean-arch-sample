@@ -43,7 +43,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/payments")
-@Tag(name = "Payments", description = "Payment management, processing and idempotency operations")
+@Tag(name = "Payments", description = "Payment management. Requires role USER or ADMIN. ADMIN may read any payment by id; list, confirm, and cancel stay owner-scoped. Another user's payment is 404.")
 @SecurityRequirement(name = "BearerAuth")
 public class PaymentController {
 
@@ -120,6 +120,7 @@ public class PaymentController {
         idempotencyService.saveCompleted(
                 currentUser.userId(),
                 normalizedKey,
+                requestPayloadJson,
                 HttpStatus.CREATED.value(),
                 responseJson
         );
@@ -135,7 +136,9 @@ public class PaymentController {
             @PathVariable UUID id,
             CurrentUser currentUser
     ) {
-        PaymentResponse response = getPaymentByIdHandler.handle(new GetPaymentByIdQuery(id, currentUser.userId()));
+        PaymentResponse response = getPaymentByIdHandler.handle(
+                new GetPaymentByIdQuery(id, currentUser.userId(), currentUser.isAdmin())
+        );
         return ResponseEntity.ok(response);
     }
 

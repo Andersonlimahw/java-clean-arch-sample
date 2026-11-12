@@ -1,6 +1,7 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -10,5 +11,7 @@ public interface IdempotencyRepository {
 
     boolean tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl);
 
-    void markCompleted(UUID userId, String key, int responseCode, String responseBodyJson);
+    void markCompleted(UUID userId, String key, String requestHash, int responseCode, String responseBodyJson);
+
+    int deleteExpired(Instant now, int limit);
 }
