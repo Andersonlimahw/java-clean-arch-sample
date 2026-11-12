@@ -116,7 +116,7 @@ Status codes the handlers return:
 
 `403` is the body produced for `AccessDeniedException`. No controller or method-security rule checks a role, so an ownership failure stays `404`. Role names travel on the access token as the `roles` claim.
 
-A repeated create with the same user, `Idempotency-Key`, and body returns the stored response and sets `Idempotent-Replayed: true`. The row is kept for 24 hours. Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
+A repeated create with the same user, `Idempotency-Key`, and body returns the stored response and sets `Idempotent-Replayed: true`. `expires_at` is set 24 hours ahead. Lookups match `user_id` and `key` only, and nothing deletes expired rows, so a completed key still replays after that timestamp. Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
 
 OpenAPI: `/v3/api-docs`. Swagger UI: `/swagger-ui.html`.
 
