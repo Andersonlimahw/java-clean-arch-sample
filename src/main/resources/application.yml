@@ -65,6 +65,7 @@ management:
           include: readinessState,db
 
 app:
+  migration-only: ${APP_MIGRATION_ONLY:false}
   jwt:
     issuer: ${JWT_ISSUER:https://api.payments.muse.com}
     audience: ${JWT_AUDIENCE:payments-api}

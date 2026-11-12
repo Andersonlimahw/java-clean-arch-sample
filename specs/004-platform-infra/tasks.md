@@ -11,4 +11,4 @@
 - [x] T009 README "Platform & CI" section + `deploy/k8s/README.md`
 - [x] T010 Validate: compose config, kustomize + kubeconform (strict, 1.30), hadolint, `bash -n`, image build on current `main`
 - [ ] T011 After PR1 merge: rebase, image build, `docker compose up` readiness smoke
-- [ ] T012 PR1/PR8: wire `app.migration-only=true` (run Flyway, then `SpringApplication.exit`)
+- [x] T012 PR1/PR8: wire `app.migration-only=true` (run Flyway, then `SpringApplication.exit`)
