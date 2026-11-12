@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -37,11 +38,13 @@ class IdempotencyServiceTest {
         String key = "test-key-1";
         String payload = "{\"amount\":100}";
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(true);
+        UUID leaseId = UUID.randomUUID();
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.of(leaseId));
 
         IdempotencyDecision decision = service.evaluateOrAcquire(userId, key, payload, Duration.ofHours(1));
 
         assertThat(decision.isReplayed()).isFalse();
+        assertThat(decision.leaseId()).isEqualTo(leaseId);
     }
 
     @Test
@@ -52,7 +55,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
         String hash = IdempotencyService.computeHash(payload);
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.empty());
         when(repository.find(userId, key)).thenReturn(Optional.of(new IdempotencyRecord(
                 key, userId, hash, IdempotencyRecord.STATUS_COMPLETED, 201, "{\"id\":\"123\"}", Instant.now(), Instant.now().plusSeconds(3600)
         )));
@@ -72,7 +75,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
         String differentHash = "different-hash-value";
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.empty());
         when(repository.find(userId, key)).thenReturn(Optional.of(new IdempotencyRecord(
                 key, userId, differentHash, IdempotencyRecord.STATUS_COMPLETED, 201, "{\"id\":\"123\"}", Instant.now(), Instant.now().plusSeconds(3600)
         )));
@@ -89,7 +92,7 @@ class IdempotencyServiceTest {
         String key = "test-key-4";
         String payload = "{\"amount\":100}";
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.empty());
         when(repository.find(userId, key)).thenReturn(Optional.of(new IdempotencyRecord(
                 key, userId, "hash", IdempotencyRecord.STATUS_PROCESSING, null, null, Instant.now(), Instant.now().plusSeconds(3600)
         )));
@@ -106,7 +109,8 @@ class IdempotencyServiceTest {
         String key = "expired-completed";
         String payload = "{\"amount\":100}";
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false, true);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any()))
+                .thenReturn(Optional.empty(), Optional.of(UUID.randomUUID()));
         when(repository.find(userId, key)).thenReturn(Optional.of(expiredRecord(
                 key, userId, "different-hash", IdempotencyRecord.STATUS_COMPLETED, 201, "{\"id\":\"old\"}"
         )));
@@ -124,7 +128,8 @@ class IdempotencyServiceTest {
         String key = "expired-processing";
         String payload = "{\"amount\":100}";
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false, true);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any()))
+                .thenReturn(Optional.empty(), Optional.of(UUID.randomUUID()));
         when(repository.find(userId, key)).thenReturn(Optional.of(expiredRecord(
                 key, userId, "hash", IdempotencyRecord.STATUS_PROCESSING, null, null
         )));
@@ -143,7 +148,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
         String hash = IdempotencyService.computeHash(payload);
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.empty());
         when(repository.find(userId, key)).thenReturn(Optional.of(expiredRecord(
                 key, userId, hash, IdempotencyRecord.STATUS_COMPLETED, 201, "{\"id\":\"old\"}"
         )));
@@ -162,7 +167,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
         String hash = IdempotencyService.computeHash(payload);
 
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(false);
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.empty());
         when(repository.find(userId, key)).thenReturn(Optional.of(new IdempotencyRecord(
                 key, userId, hash, IdempotencyRecord.STATUS_COMPLETED, 201, "{\"id\":\"123\"}",
                 Instant.now(), Instant.now().plus(Duration.ofHours(24))
@@ -183,9 +188,57 @@ class IdempotencyServiceTest {
         String key = "test-key-5";
 
         String payload = "{\"amount\":100}";
-        service.saveCompleted(userId, key, payload, 201, "{\"id\":\"abc\"}");
+        UUID leaseId = UUID.randomUUID();
+        when(repository.markCompleted(userId, key, IdempotencyService.computeHash(payload), leaseId, 201, "{\"id\":\"abc\"}"))
+                .thenReturn(1);
 
-        verify(repository).markCompleted(userId, key, IdempotencyService.computeHash(payload), 201, "{\"id\":\"abc\"}");
+        service.saveCompleted(userId, key, payload, leaseId, 201, "{\"id\":\"abc\"}");
+
+        verify(repository).markCompleted(userId, key, IdempotencyService.computeHash(payload), leaseId, 201, "{\"id\":\"abc\"}");
+    }
+
+    @Test
+    @DisplayName("a missed completion does not fail the caller that already created the payment")
+    void saveCompleted_ignoresAMissedUpdate() {
+        UUID userId = UUID.randomUUID();
+        String key = "lost-lease";
+        String payload = "{\"amount\":100}";
+        UUID leaseId = UUID.randomUUID();
+        when(repository.markCompleted(any(), any(), any(), any(), eq(201), any())).thenReturn(0);
+
+        assertThatCode(() -> service.saveCompleted(userId, key, payload, leaseId, 201, "{\"id\":\"abc\"}"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("a live key in an unknown status is a conflict and does not proceed")
+    void liveUnknownStatusIsConflict() {
+        UUID userId = UUID.randomUUID();
+        String key = "weird-status";
+        String payload = "{\"amount\":100}";
+
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.empty());
+        when(repository.find(userId, key)).thenReturn(Optional.of(new IdempotencyRecord(
+                key, userId, "hash", "FAILED", null, null, Instant.now(), Instant.now().plusSeconds(3600)
+        )));
+
+        assertThatThrownBy(() -> service.evaluateOrAcquire(userId, key, payload, Duration.ofHours(1)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("cannot be reused");
+        verify(repository, times(1)).tryInsertProcessing(eq(userId), eq(key), any(), any());
+    }
+
+    @Test
+    @DisplayName("releaseProcessing deletes only the caller's processing lease")
+    void releaseProcessing_delegatesToRepository() {
+        UUID userId = UUID.randomUUID();
+        String key = "release-me";
+        String payload = "{\"amount\":100}";
+        UUID leaseId = UUID.randomUUID();
+
+        service.releaseProcessing(userId, key, payload, leaseId);
+
+        verify(repository).deleteProcessing(userId, key, IdempotencyService.computeHash(payload), leaseId);
     }
 
     private static IdempotencyRecord expiredRecord(

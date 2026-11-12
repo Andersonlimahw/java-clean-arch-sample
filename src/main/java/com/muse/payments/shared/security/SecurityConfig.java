@@ -60,7 +60,7 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
                         ).permitAll()
-                        .requestMatchers("/api/v1/payments/**").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers("/api/v1/payments", "/api/v1/payments/**").hasAnyRole("USER", "ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

@@ -1,15 +1,19 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
+import java.util.Objects;
+import java.util.UUID;
+
 public record IdempotencyDecision(
         boolean isReplayed,
         Integer responseCode,
-        String responseBody
+        String responseBody,
+        UUID leaseId
 ) {
-    public static IdempotencyDecision proceed() {
-        return new IdempotencyDecision(false, null, null);
+    public static IdempotencyDecision proceed(UUID leaseId) {
+        return new IdempotencyDecision(false, null, null, Objects.requireNonNull(leaseId, "leaseId must not be null"));
     }
 
     public static IdempotencyDecision replayed(int responseCode, String responseBody) {
-        return new IdempotencyDecision(true, responseCode, responseBody);
+        return new IdempotencyDecision(true, responseCode, responseBody, null);
     }
 }

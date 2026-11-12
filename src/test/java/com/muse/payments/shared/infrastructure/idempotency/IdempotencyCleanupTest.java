@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,5 +30,18 @@ class IdempotencyCleanupTest {
         Scheduled scheduled = IdempotencyCleanup.class.getMethod("deleteExpired").getAnnotation(Scheduled.class);
         assertThat(scheduled).isNotNull();
         assertThat(scheduled.fixedDelayString()).contains("app.idempotency.cleanup-interval-ms");
+    }
+
+    @Test
+    @DisplayName("a full batch is followed by another until a short batch remains")
+    void deleteExpiredDrainsFullBatches() {
+        IdempotencyRepository repository = mock(IdempotencyRepository.class);
+        when(repository.deleteExpired(any(Instant.class), eq(IdempotencyCleanup.BATCH_SIZE)))
+                .thenReturn(IdempotencyCleanup.BATCH_SIZE, IdempotencyCleanup.BATCH_SIZE, 20);
+
+        IdempotencyCleanup cleanup = new IdempotencyCleanup(repository);
+
+        assertThat(cleanup.deleteExpired()).isEqualTo(IdempotencyCleanup.BATCH_SIZE * 2 + 20);
+        verify(repository, times(3)).deleteExpired(any(Instant.class), eq(IdempotencyCleanup.BATCH_SIZE));
     }
 }

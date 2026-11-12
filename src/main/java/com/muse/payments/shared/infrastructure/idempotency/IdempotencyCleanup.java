@@ -23,10 +23,15 @@ public class IdempotencyCleanup {
 
     @Scheduled(fixedDelayString = "${app.idempotency.cleanup-interval-ms:3600000}")
     public int deleteExpired() {
-        int removed = repository.deleteExpired(Instant.now(), BATCH_SIZE);
-        if (removed > 0) {
-            log.info("Deleted {} expired idempotency keys", removed);
+        int total = 0;
+        int removed;
+        do {
+            removed = repository.deleteExpired(Instant.now(), BATCH_SIZE);
+            total += removed;
+        } while (removed == BATCH_SIZE);
+        if (total > 0) {
+            log.info("Deleted {} expired idempotency keys", total);
         }
-        return removed;
+        return total;
     }
 }

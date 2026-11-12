@@ -114,13 +114,29 @@ public class PaymentController {
                 request.description()
         );
 
-        PaymentResponse response = createPaymentHandler.handle(command);
+        PaymentResponse response;
+        try {
+            response = createPaymentHandler.handle(command);
+        } catch (RuntimeException ex) {
+            try {
+                idempotencyService.releaseProcessing(
+                        currentUser.userId(),
+                        normalizedKey,
+                        requestPayloadJson,
+                        decision.leaseId()
+                );
+            } catch (RuntimeException releaseError) {
+                ex.addSuppressed(releaseError);
+            }
+            throw ex;
+        }
         String responseJson = objectMapper.writeValueAsString(response);
 
         idempotencyService.saveCompleted(
                 currentUser.userId(),
                 normalizedKey,
                 requestPayloadJson,
+                decision.leaseId(),
                 HttpStatus.CREATED.value(),
                 responseJson
         );

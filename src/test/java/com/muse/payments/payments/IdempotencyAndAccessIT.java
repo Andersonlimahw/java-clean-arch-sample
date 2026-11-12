@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.TestcontainersBase;
 import com.muse.payments.payments.application.CreatePaymentRequest;
 import com.muse.payments.shared.infrastructure.idempotency.IdempotencyCleanup;
+import com.muse.payments.shared.infrastructure.idempotency.IdempotencyRepository;
+import com.muse.payments.shared.infrastructure.idempotency.IdempotencyService;
 import com.muse.payments.shared.security.JwtTokenIssuer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -51,6 +54,9 @@ class IdempotencyAndAccessIT extends TestcontainersBase {
 
     @Autowired
     private IdempotencyCleanup idempotencyCleanup;
+
+    @Autowired
+    private IdempotencyRepository idempotencyRepository;
 
     @Test
     @DisplayName("a live idempotency key replays and an expired key starts a new payment")
@@ -173,6 +179,145 @@ class IdempotencyAndAccessIT extends TestcontainersBase {
         mockMvc.perform(post("/api/v1/payments/" + paymentId + "/confirm")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/v1/payments/" + paymentId + "/cancel")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/v1/payments/" + paymentId + "/confirm")
+                        .header("Authorization", "Bearer " + otherUserToken))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/v1/payments/" + paymentId + "/cancel")
+                        .header("Authorization", "Bearer " + otherUserToken))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/v1/payments/" + paymentId)
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    @DisplayName("payments require a valid token and reject roles other than USER or ADMIN")
+    void paymentsRequireUserOrAdmin() throws Exception {
+        UUID ownerId = UUID.randomUUID();
+        String userToken = jwtTokenIssuer.issueAccessToken(ownerId, List.of("USER"));
+        String auditorToken = jwtTokenIssuer.issueAccessToken(UUID.randomUUID(), List.of("AUDITOR"));
+        CreatePaymentRequest request = new CreatePaymentRequest(new BigDecimal("8.00"), "BRL", "Auth matrix");
+        String paymentId = createPayment(userToken, "auth-" + UUID.randomUUID(), request);
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.title").value("Unauthorized"));
+
+        mockMvc.perform(get("/api/v1/payments"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+
+        mockMvc.perform(get("/api/v1/payments/" + paymentId)
+                        .header("Authorization", "Bearer not-a-jwt"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Unauthorized"));
+
+        for (var call : List.of(
+                get("/api/v1/payments"),
+                get("/api/v1/payments/" + paymentId),
+                post("/api/v1/payments/" + paymentId + "/confirm"),
+                post("/api/v1/payments/" + paymentId + "/cancel")
+        )) {
+            mockMvc.perform(call.header("Authorization", "Bearer " + auditorToken))
+                    .andExpect(status().isForbidden())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                    .andExpect(jsonPath("$.status").value(403))
+                    .andExpect(jsonPath("$.title").value("Forbidden"));
+        }
+
+        mockMvc.perform(get("/api/v1/payments/" + paymentId)
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    @DisplayName("a failed create releases the key and an in-flight key conflicts until it expires")
+    void failedCreateReleasesKeyAndInFlightKeyConflictsUntilExpiry() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = jwtTokenIssuer.issueAccessToken(userId, List.of("USER"));
+        String retryKey = "retry-" + UUID.randomUUID();
+        CreatePaymentRequest invalid = new CreatePaymentRequest(new BigDecimal("10.00"), "ZZZ", "not a currency");
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", retryKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest());
+
+        assertThat(countPayments(userId)).isZero();
+        assertThat(countKeys(userId, retryKey)).isZero();
+
+        CreatePaymentRequest valid = new CreatePaymentRequest(new BigDecimal("10.00"), "BRL", "retry after failure");
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", retryKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(valid)))
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replayed"));
+        assertThat(countPayments(userId)).isEqualTo(1);
+
+        String inFlightKey = "inflight-" + UUID.randomUUID();
+        String payload = objectMapper.writeValueAsString(valid);
+        assertThat(idempotencyRepository.tryInsertProcessing(
+                userId, inFlightKey, IdempotencyService.computeHash(payload), Duration.ofHours(24)
+        )).isPresent();
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", inFlightKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Concurrent request in progress for idempotency key: " + inFlightKey));
+        assertThat(countPayments(userId)).isEqualTo(1);
+
+        expireKey(userId, inFlightKey);
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", inFlightKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replayed"));
+        assertThat(countPayments(userId)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("completion and release match only the lease that still owns the processing row")
+    void completionAndReleaseMatchTheOwningLease() {
+        UUID userId = UUID.randomUUID();
+        String key = "lease-" + UUID.randomUUID();
+        String hash = IdempotencyService.computeHash("{\"amount\":1}");
+        UUID first = idempotencyRepository.tryInsertProcessing(userId, key, hash, Duration.ofMinutes(5)).orElseThrow();
+        expireKey(userId, key);
+        UUID second = idempotencyRepository.tryInsertProcessing(userId, key, hash, Duration.ofMinutes(5)).orElseThrow();
+
+        assertThat(second).isNotEqualTo(first);
+        assertThat(idempotencyRepository.markCompleted(userId, key, hash, first, 201, "{\"id\":\"old\"}")).isZero();
+        assertThat(idempotencyRepository.markCompleted(userId, key, "other-hash", second, 201, "{\"id\":\"new\"}")).isZero();
+        assertThat(idempotencyRepository.deleteProcessing(userId, key, hash, first)).isZero();
+        assertThat(countKeys(userId, key)).isEqualTo(1);
+        assertThat(keyStatus(userId, key)).isEqualTo("PROCESSING");
+        assertThat(idempotencyRepository.markCompleted(userId, key, hash, second, 201, "{\"id\":\"new\"}")).isEqualTo(1);
+        assertThat(keyStatus(userId, key)).isEqualTo("COMPLETED");
     }
 
     private String createPayment(String token, String key, CreatePaymentRequest request) throws Exception {
@@ -191,6 +336,24 @@ class IdempotencyAndAccessIT extends TestcontainersBase {
         jdbcTemplate.update(
                 "UPDATE idempotency_keys SET expires_at = ? WHERE user_id = ? AND key = ?",
                 Timestamp.from(Instant.now().minusSeconds(120)),
+                userId,
+                key
+        );
+    }
+
+    private int countPayments(UUID userId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE user_id = ?",
+                Integer.class,
+                userId
+        );
+        return count == null ? 0 : count;
+    }
+
+    private String keyStatus(UUID userId, String key) {
+        return jdbcTemplate.queryForObject(
+                "SELECT status FROM idempotency_keys WHERE user_id = ? AND key = ?",
+                String.class,
                 userId,
                 key
         );

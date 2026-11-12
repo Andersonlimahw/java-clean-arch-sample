@@ -1,6 +1,8 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
 import com.muse.payments.shared.domain.ConflictException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -17,6 +19,9 @@ import java.util.UUID;
 public class IdempotencyService {
 
     public static final Duration DEFAULT_TTL = Duration.ofHours(24);
+
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
+
     private final IdempotencyRepository repository;
 
     public IdempotencyService(IdempotencyRepository repository) {
@@ -44,8 +49,9 @@ public class IdempotencyService {
         Duration effectiveTtl = ttl != null ? ttl : DEFAULT_TTL;
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            if (repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl)) {
-                return IdempotencyDecision.proceed();
+            Optional<UUID> leaseId = repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl);
+            if (leaseId.isPresent()) {
+                return IdempotencyDecision.proceed(leaseId.get());
             }
 
             Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
@@ -73,10 +79,19 @@ public class IdempotencyService {
             );
         }
 
-        return IdempotencyDecision.proceed();
+        throw new ConflictException("Idempotency key cannot be reused while it is unexpired: " + key);
     }
 
-    public void saveCompleted(UUID userId, String key, String payloadJson, int statusCode, String responseJson) {
-        repository.markCompleted(userId, key, computeHash(payloadJson), statusCode, responseJson);
+    public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, int statusCode, String responseJson) {
+        Objects.requireNonNull(leaseId, "leaseId must not be null");
+        int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, statusCode, responseJson);
+        if (updated != 1) {
+            log.warn("Idempotency completion matched no row for user {} key {}", userId, key);
+        }
+    }
+
+    public void releaseProcessing(UUID userId, String key, String payloadJson, UUID leaseId) {
+        Objects.requireNonNull(leaseId, "leaseId must not be null");
+        repository.deleteProcessing(userId, key, computeHash(payloadJson), leaseId);
     }
 }
