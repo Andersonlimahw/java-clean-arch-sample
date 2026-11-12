@@ -9,7 +9,7 @@ The project was originally ported as a trip-planner modular monolith (`journey` 
 ## Decision
 1. Remove trip-planner modules (`trips`, `participants`, `activities`, `links`).
 2. Establish three business modules, plus an open `shared` kernel:
-   - `identity`: User registration, authentication, token rotation, and role claims on the access token. Endpoints do not check those roles.
+   - `identity`: User registration, authentication, token rotation, and role claims on the access token. `/api/v1/payments` requires `USER` or `ADMIN` ([ADR 0009](0009-jwt-vs-external-idp.md)). Other authenticated routes do not authorize by role.
    - `payments`: Payment aggregate root, state machine (PENDING, COMPLETED, CANCELLED), idempotency key handling, and optimistic locking.
    - `notifications`: Asynchronous notification processing driven by integration events.
    - `shared`: Common domain building blocks, the `OutboxPort`, the `ProcessedEventStore`, security filters, and RFC 7807 problem details.

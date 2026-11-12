@@ -16,14 +16,14 @@ Cache-aside, implemented by `PaymentCacheService`:
 - A per-key in-process lock collapses a stampede on a single instance.
 - Confirm and cancel call `evictAfterCommit`, so a rolled-back transaction does not drop a still-valid entry, and a committed one does not keep serving the previous status.
 - Redis errors increment `payments.cache.errors` and the request continues against PostgreSQL.
-- Another user's id returns 404 from the ownership check. Cached payloads are still filtered by owner on the way out.
+- Another user's id returns 404 from the ownership check that runs after the cache load. `ADMIN` may read any payment by id. Confirm and cancel stay owner-only. Do not treat a cache hit as authorization.
 
 ## Consequences
 
 - A second instance can still stampede; the lock is local. That is acceptable until cache latency says otherwise.
 - Eviction is delete, not an update. The next read refills. A delete that fails (Redis down) expires by TTL, so the worst case is 10 minutes of stale status, and only if Redis failed during eviction but still serves reads. If Redis is fully down, every read hits PostgreSQL.
 - Lists are not cached. They are owner-scoped pages and change often.
-- Do not put authorization decisions solely in the cached JSON. The handler checks the owner.
+- Do not put authorization decisions solely in the cached JSON. The handler checks the owner after the load, and skips that check only for an `ADMIN` get-by-id.
 
 ## Alternatives
 

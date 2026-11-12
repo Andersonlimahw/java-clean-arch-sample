@@ -10,7 +10,7 @@ Diagrams, the HTTP contract, and the consistency model: [docs/architecture.md](d
 Trade-offs: [docs/adr](docs/adr/README.md).
 
 - **Modular Monolith**: base package `com.muse.payments` with verifiable architectural boundaries.
-  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Endpoints require a valid bearer token and do not authorize by role.
+  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Payment routes require `USER` or `ADMIN`. Other authenticated routes do not authorize by role.
   - `payments`: Payment aggregate root, state machine (PENDING → COMPLETED / CANCELLED), idempotency key deduplication, and optimistic locking.
   - `notifications`: Event-driven notification dispatch via RabbitMQ with idempotent consumer (`processed_events`).
   - `shared`: Common domain building blocks, the outbox port, the processed-event store, security filters, and RFC 7807 problem details.

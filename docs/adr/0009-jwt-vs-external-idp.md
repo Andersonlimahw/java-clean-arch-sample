@@ -13,6 +13,9 @@ Identity is inside the monolith.
 
 - Passwords are BCrypt strength 12 (`BCryptPasswordEncoder(12)` in `SecurityConfig`).
 - Access tokens are RS256 JWTs. TTL is `app.jwt.access-token-ttl` / `ACCESS_TOKEN_TTL`, default `PT15M`. Claims set by `JwtTokenIssuer`: `sub` (user id), `roles`, `iss`, `aud`, `exp`, `iat`, `jti`, `typ=access`.
+- The `roles` claim is mapped to `ROLE_*` authorities. Registration stores `USER`. `ADMIN` is the other role the payment API accepts.
+- `/api/v1/payments` and `/api/v1/payments/**` require `USER` or `ADMIN` (`hasAnyRole` in `SecurityConfig`). A missing or invalid token is **401** `application/problem+json`. A valid token without those roles is **403** `application/problem+json`. Other authenticated routes, including `GET /api/v1/notifications`, only require a valid token.
+- Payment ownership stays **404**, the same problem as a missing id. `ADMIN` may `GET /api/v1/payments/{id}` for any payment. List, confirm, and cancel stay owner-only for every role, including `ADMIN`.
 - The resource server validates signature, issuer, audience, and expiry. A missing `typ` is accepted; a present `typ` must be `access` (`JwtKeyConfig`). Keys come from `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` (`app.jwt.private-key-pem` / `public-key-pem`). When the PEMs are blank, an ephemeral 2048-bit pair is generated only if `prod` is inactive and the active profiles include `local`, `test`, `default`, or `migration`. Any other case, including `prod` combined with `migration`, refuses to start.
 - Refresh tokens are opaque, stored as SHA-256 hashes, TTL `REFRESH_TOKEN_TTL` default `P7D`, rotated on use, and revoked for the whole family if a rotated token is presented again.
 - Register, login, and refresh are rate-limited by client IP (`AuthRateLimiter`): Redis key `ratelimit:auth:{ip}`, 20 requests per one-minute window, in-memory fallback if Redis throws. The response is 429 with `Retry-After: 60`. Logout is not limited.
@@ -21,7 +24,7 @@ Identity is inside the monolith.
 ## Consequences
 
 - Password reset and account lockout are not implemented. Key rotation today means deploying a new pair; outstanding access tokens remain valid until `exp` (15 minutes at the default TTL). The rate limiter is the lockout control that exists, and it is per IP rather than per account.
-- An external IdP can replace `LoginCommandHandler` later if the JWT claims stay the same. The resource server already treats the token as a bearer credential.
+- An external IdP can replace `LoginCommandHandler` later if the JWT claims stay the same. The resource server already treats the token as a bearer credential, and payment authorization keeps using the `roles` claim (`USER` or `ADMIN`).
 - Refresh tokens in our database are not reusable across products.
 
 ## Alternatives

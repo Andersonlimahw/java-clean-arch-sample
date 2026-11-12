@@ -97,11 +97,11 @@ Base path `/api/v1`. Errors are RFC 7807 `application/problem+json` and omit the
 | POST | `/api/v1/auth/login` | public | 200 |
 | POST | `/api/v1/auth/refresh` | public | 200, rotated pair |
 | POST | `/api/v1/auth/logout` | public | 204 |
-| POST | `/api/v1/payments` | Bearer | 201, requires `Idempotency-Key` |
-| GET | `/api/v1/payments/{id}` | Bearer, owner | 200 |
-| GET | `/api/v1/payments` | Bearer | 200, page of the caller's payments |
-| POST | `/api/v1/payments/{id}/confirm` | Bearer, owner | 200 |
-| POST | `/api/v1/payments/{id}/cancel` | Bearer, owner | 200 |
+| POST | `/api/v1/payments` | Bearer, `USER` or `ADMIN` | 201, requires `Idempotency-Key`. The caller owns the payment |
+| GET | `/api/v1/payments/{id}` | Bearer, `USER` or `ADMIN` | 200 for the owner, or for any payment when the caller is `ADMIN` |
+| GET | `/api/v1/payments` | Bearer, `USER` or `ADMIN` | 200, the caller's own payments, including when the caller is `ADMIN` |
+| POST | `/api/v1/payments/{id}/confirm` | Bearer, `USER` or `ADMIN`, owner | 200. Another user's payment is 404, including for `ADMIN` |
+| POST | `/api/v1/payments/{id}/cancel` | Bearer, `USER` or `ADMIN`, owner | 200. Another user's payment is 404, including for `ADMIN` |
 | GET | `/api/v1/notifications` | Bearer | 200, caller's notifications |
 
 Status codes the handlers return:
@@ -109,15 +109,16 @@ Status codes the handlers return:
 | Status | When |
 |---|---|
 | 400 | Bean validation, malformed JSON, missing `Idempotency-Key`, or a key longer than 120 characters |
-| 401 | Missing or invalid bearer token, bad login or refresh credentials, or a disabled account (`BadCredentialsException` / `AuthenticationException`) |
-| 404 | Unknown payment id, or a payment owned by someone else |
-| 409 | Illegal payment transition, duplicate registration email, idempotency payload mismatch, idempotency key still in `PROCESSING`, optimistic lock, or `DataIntegrityViolationException` |
+| 401 | Missing or invalid bearer token, bad login or refresh credentials, or a disabled account (`BadCredentialsException` / `AuthenticationException`). `application/problem+json` |
+| 403 | Authenticated token that does not include `USER` or `ADMIN` on `/api/v1/payments` and `/api/v1/payments/**`. `application/problem+json` |
+| 404 | Unknown payment id, or a payment the caller does not own. `ADMIN` may get any payment by id. List, confirm, and cancel stay owner-only, so a non-owner `ADMIN` is still 404 on confirm and cancel |
+| 409 | Illegal payment transition, duplicate registration email, idempotency payload mismatch, idempotency key still in `PROCESSING` and unexpired, optimistic lock, or `DataIntegrityViolationException` |
 | 429 | Register, login, and refresh over 20 requests per minute for the client IP. `Retry-After` is `60`. Logout has no limit. |
 | 500 | Unhandled exception, generic problem detail, no stack trace |
 
-`403` is the body produced for `AccessDeniedException`. No controller or method-security rule checks a role, so an ownership failure stays `404`. Role names travel on the access token as the `roles` claim.
+Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_ADMIN`. The payment filter chain requires one of those roles. A missing or invalid token is 401. A known token without them is 403 `application/problem+json`. An ownership miss stays 404 so callers cannot tell whether another user's payment exists. `GET /api/v1/notifications` stays any authenticated user and owner-scoped.
 
-A repeated create with the same user, `Idempotency-Key`, and body returns the stored response and sets `Idempotent-Replayed: true`. `expires_at` is set 24 hours ahead. Lookups match `user_id` and `key` only, and nothing deletes expired rows, so a completed key still replays after that timestamp. Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
+A repeated create with the same user, unexpired `Idempotency-Key`, and canonical body (amount scaled to 2 decimals, currency uppercased) returns the stored response and sets `Idempotent-Replayed: true`. `expires_at` is 24 hours ahead. Lookup requires `expires_at > now`. After that, the same key is a new payment. The create transaction commits the lease, the payment, and the cached response together. Completion updates only the unexpired `PROCESSING` row for that attempt's `lease_id`. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until a short batch remains (`app.idempotency.cleanup-interval-ms`, default 1 hour). Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
 
 OpenAPI: `/v3/api-docs`. Swagger UI: `/swagger-ui.html`.
 
@@ -229,7 +230,8 @@ erDiagram
         uuid user_id PK
         string key PK
         string status
+        uuid lease_id
     }
 ```
 
-Flyway migrations are append-only: `V1` `outbox_events`, `processed_events`, and `idempotency_keys`; `V2` identity; `V3` payments; `V4` notifications.
+Flyway migrations are append-only: `V1` `outbox_events`, `processed_events`, and `idempotency_keys`; `V2` identity; `V3` payments; `V4` notifications; `V5` `idempotency_keys.lease_id`.
