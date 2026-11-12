@@ -1,4 +1,4 @@
-# ADR 0012 — Java 25 LTS
+# ADR 0013 — Java 25 LTS
 
 - **Status:** Accepted
 - **Date:** 2026-11-12
