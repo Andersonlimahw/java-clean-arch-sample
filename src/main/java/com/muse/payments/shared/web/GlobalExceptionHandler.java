@@ -19,6 +19,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -55,6 +56,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ValidationException.class)
     public ProblemDetail handleValidation(ValidationException ex, HttpServletRequest request) {
         return createProblemDetail(HttpStatus.BAD_REQUEST, "Validation Error", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        String name = ex.getName() == null ? "parameter" : ex.getName();
+        return createProblemDetail(
+                HttpStatus.BAD_REQUEST,
+                "Validation Error",
+                "Invalid value for parameter '" + name + "'",
+                request
+        );
     }
 
     @ExceptionHandler(RateLimitExceededException.class)

@@ -7,10 +7,11 @@ public record PageResponse<T>(
         int page,
         int size,
         long totalElements,
-        int totalPages
+        int totalPages,
+        String sort
 ) {
-    public static <T> PageResponse<T> of(List<T> items, int page, int size, long totalElements) {
-        int totalPages = size == 0 ? 1 : (int) Math.ceil((double) totalElements / (double) size);
-        return new PageResponse<>(items, page, size, totalElements, totalPages);
+    public static <T> PageResponse<T> of(List<T> items, int page, int size, long totalElements, String sort) {
+        int totalPages = size <= 0 ? 0 : (int) Math.ceil((double) totalElements / (double) size);
+        return new PageResponse<>(items, page, size, totalElements, totalPages, sort);
     }
 }

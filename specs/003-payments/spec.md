@@ -65,9 +65,13 @@ Implement the core Payments processing module adhering strictly to Domain-Driven
 
 ### 2.3 GET `/api/v1/payments`
 - **Headers**: `Authorization: Bearer <jwt>`
-- **Query Params**: `page` (default 0), `size` (default 20)
+- **Query Params**:
+  - `page` (default `0`): integer >= 0. A negative or non-integer value is **400** and is not coerced to 0.
+  - `size` (default `20`): integer from 1 to 100 inclusive. `0`, negative, and values above 100 are **400** and are not clamped.
+  - `sort` (default `createdAt,desc`): allowlist `createdAt,desc` or `createdAt,asc`. Any other value is **400**. Surrounding whitespace is ignored. `createdAt,desc` orders by `created_at DESC, id DESC`. `createdAt,asc` orders by `created_at ASC, id ASC`.
 - **Responses**:
-  - `200 OK`: Page list of payments owned by the authenticated user, including when the caller is `ADMIN`.
+  - `200 OK`: Page of payments owned by the authenticated user, including when the caller is `ADMIN`. Body: `items`, `page`, `size`, `totalElements`, `totalPages`, `sort`. A page past the end returns an empty `items` array and the same totals. Omitting `page`, `size`, and `sort` keeps the previous default page.
+  - `400 Bad Request`: Invalid `page`, `size`, or `sort`. `application/problem+json`, title `Validation Error`.
   - `403 Forbidden`: Authenticated caller does not have role `USER` or `ADMIN`.
 
 ### 2.4 POST `/api/v1/payments/{id}/confirm`

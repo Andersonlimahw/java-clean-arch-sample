@@ -20,6 +20,11 @@ import com.muse.payments.shared.infrastructure.idempotency.IdempotencyDecision;
 import com.muse.payments.shared.infrastructure.idempotency.IdempotencyService;
 import com.muse.payments.shared.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -170,14 +175,46 @@ public class PaymentController {
     }
 
     @GetMapping
-    @Operation(summary = "List current user payments with pagination")
+    @Operation(
+            summary = "List current user payments with offset pagination",
+            description = "Owner-scoped offset page. Default page is 0 and default size is 20. "
+                    + "page must be an integer >= 0. size must be an integer from 1 to 100. "
+                    + "sort allowlist is createdAt,desc (default) and createdAt,asc. "
+                    + "createdAt,desc ties break on id DESC; createdAt,asc ties break on id ASC. "
+                    + "A negative page, a size outside 1..100, a non-integer page or size, "
+                    + "and any other sort are HTTP 400 application/problem+json and are not clamped. "
+                    + "Omitting page, size, and sort stays compatible with existing clients. "
+                    + "The body adds sort and keeps items, page, size, totalElements, and totalPages. "
+                    + "A page past the end is HTTP 200 with an empty items array."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Page of payments owned by the caller"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid page, size, or sort",
+                    content = @Content(mediaType = "application/problem+json")
+            )
+    })
     public ResponseEntity<PageResponse<PaymentResponse>> listPayments(
+            @Parameter(
+                    description = "Zero-based page index. Default 0. Negative or non-integer values are rejected with 400.",
+                    schema = @Schema(type = "integer", minimum = "0", defaultValue = "0")
+            )
             @RequestParam(defaultValue = "0") int page,
+            @Parameter(
+                    description = "Page size. Default 20. Must be from 1 to 100 inclusive. Other values are rejected with 400.",
+                    schema = @Schema(type = "integer", minimum = "1", maximum = "100", defaultValue = "20")
+            )
             @RequestParam(defaultValue = "20") int size,
+            @Parameter(
+                    description = "Allowlist: createdAt,desc (default) or createdAt,asc. Any other value is 400.",
+                    schema = @Schema(allowableValues = {"createdAt,desc", "createdAt,asc"}, defaultValue = "createdAt,desc")
+            )
+            @RequestParam(required = false) String sort,
             CurrentUser currentUser
     ) {
         PageResponse<PaymentResponse> response = listPaymentsHandler.handle(
-                new ListPaymentsQuery(currentUser.userId(), page, size)
+                new ListPaymentsQuery(currentUser.userId(), page, size, sort)
         );
         return ResponseEntity.ok(response);
     }
