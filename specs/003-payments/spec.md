@@ -60,14 +60,19 @@ Implement the core Payments processing module adhering strictly to Domain-Driven
 - **Headers**: `Authorization: Bearer <jwt>`
 - **Responses**:
   - `200 OK`: Payment response representation. `ADMIN` receives this for any existing payment.
+  - `400 Bad Request`: `id` is not a UUID. `application/problem+json`, title `Validation Error`, detail `Invalid value for parameter 'id'`.
   - `403 Forbidden`: Authenticated caller does not have role `USER` or `ADMIN`.
   - `404 Not Found`: Payment does not exist, or the caller is not `ADMIN` and does not own it (anti-enumeration).
 
 ### 2.3 GET `/api/v1/payments`
 - **Headers**: `Authorization: Bearer <jwt>`
-- **Query Params**: `page` (default 0), `size` (default 20)
+- **Query Params**:
+  - `page` (default `0`): integer >= 0. `page * size` must be <= 10000. A negative page, a non-integer, and an offset above 10000 (including a product past `Integer.MAX_VALUE`, such as `page=21474837&size=100`) are **400** and are not coerced.
+  - `size` (default `20`): integer from 1 to 100 inclusive. `0`, negative, and values above 100 are **400** and are not clamped. This is a breaking change from the previous clamp (`size <= 0` became 20, `size > 100` became 100, `page < 0` became 0).
+  - `sort` (default `createdAt,desc`): case-sensitive allowlist `createdAt,desc` or `createdAt,asc`. `createdAt,DESC` and any other value are **400**. Surrounding whitespace is ignored. `createdAt,desc` orders by `created_at DESC, id DESC`. `createdAt,asc` orders by `created_at ASC, id ASC`. Spring joins repeated `sort` parameters with a comma, so `sort=createdAt&sort=desc` is the default order and `sort=createdAt,desc&sort=createdAt,asc` is **400**.
 - **Responses**:
-  - `200 OK`: Page list of payments owned by the authenticated user, including when the caller is `ADMIN`.
+  - `200 OK`: Page of payments owned by the authenticated user, including when the caller is `ADMIN`. Body: `items`, `page`, `size`, `totalElements`, `totalPages`, `sort`. A page past the end, still within the offset cap, returns an empty `items` array and the same totals. Omitting `page`, `size`, and `sort` keeps the previous default page. Order is stable for a static dataset. A concurrent insert or delete can shift later offset pages, and `totalElements` can disagree with `items`, because the page query and the count are two reads.
+  - `400 Bad Request`: Invalid `page`, `size`, or `sort`. `application/problem+json`, title `Validation Error`. The OpenAPI response schema is `ProblemDetail`.
   - `403 Forbidden`: Authenticated caller does not have role `USER` or `ADMIN`.
 
 ### 2.4 POST `/api/v1/payments/{id}/confirm`
