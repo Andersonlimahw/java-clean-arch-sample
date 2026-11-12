@@ -35,6 +35,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Session advisory lock so CREATE INDEX CONCURRENTLY is not inside a transaction.
+    postgresql:
+      transactional-lock: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}

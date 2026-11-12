@@ -7,6 +7,11 @@ import java.util.UUID;
 public record ListPaymentsQuery(
         UUID userId,
         int page,
-        int size
+        int size,
+        String sort
 ) implements Query<PageResponse<PaymentResponse>> {
+
+    public ListPaymentsQuery(UUID userId, int page, int size) {
+        this(userId, page, size, null);
+    }
 }

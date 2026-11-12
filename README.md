@@ -28,7 +28,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 | `POST /api/v1/auth/**` | Public | — |
 | `POST /api/v1/payments` | `USER` or `ADMIN` | The caller owns the payment that is created |
 | `GET /api/v1/payments/{id}` | `USER` or `ADMIN` | Owner, or any payment when the caller is `ADMIN`. Another user's payment is **404** |
-| `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN` |
+| `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN`. `page`/`size`/`sort` outside the documented bounds are **400** (they used to be clamped) |
 | `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
 | `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
 | `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
@@ -72,7 +72,7 @@ Start PostgreSQL, Redis, and RabbitMQ, then the application, from the repository
 ./scripts/validate-api.sh
 ```
 
-The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The same statuses are in `src/test/postman/payments-v1.postman_collection.json`.
+The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The same statuses are in `src/test/postman/payments-v1.postman_collection.json`. Paginated list examples are in that collection. The load test and the list index explain are in [perf/README.md](perf/README.md).
 
 ### Kubernetes migration Job
 

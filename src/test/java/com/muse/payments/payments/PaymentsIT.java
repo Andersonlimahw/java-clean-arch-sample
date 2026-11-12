@@ -131,6 +131,9 @@ class PaymentsIT extends TestcontainersBase {
                         .header("Authorization", "Bearer " + tokenUserA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items").isArray())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.sort").value("createdAt,desc"))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         // 9. Confirm Payment -> 200 OK with COMPLETED status

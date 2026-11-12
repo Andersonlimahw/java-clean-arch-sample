@@ -173,6 +173,142 @@
       }
     },
     {
+      "name": "List payments default page",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('default page metadata', function () {",
+              "  pm.expect(body.page).to.eql(0);",
+              "  pm.expect(body.size).to.eql(20);",
+              "  pm.expect(body.sort).to.eql('createdAt,desc');",
+              "  pm.expect(body.totalElements).to.be.at.least(1);",
+              "  pm.expect(body.items[0].id).to.eql(pm.collectionVariables.get('paymentId'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments?page=0&size=20&sort=createdAt,desc"
+      }
+    },
+    {
+      "name": "List payments next page",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('second page is empty when only one payment exists', function () {",
+              "  pm.expect(body.page).to.eql(1);",
+              "  pm.expect(body.size).to.eql(1);",
+              "  pm.expect(body.sort).to.eql('createdAt,asc');",
+              "  pm.expect(body.items).to.eql([]);",
+              "  pm.expect(body.totalElements).to.eql(1);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments?page=1&size=1&sort=createdAt,asc"
+      }
+    },
+    {
+      "name": "List payments rejects size above 100",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('size is rejected rather than clamped', function () {",
+              "  pm.expect(body.title).to.eql('Validation Error');",
+              "  pm.expect(body.detail).to.eql('size must be between 1 and 100');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments?page=0&size=101"
+      }
+    },
+    {
+      "name": "List payments rejects an offset above 10000",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('offset cap', function () {",
+              "  pm.expect(body.title).to.eql('Validation Error');",
+              "  pm.expect(body.detail).to.eql('page is too large; page * size must be <= 10000');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments?page=21474837&size=100"
+      }
+    },
+    {
+      "name": "List payments rejects sort outside the allowlist",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('sort allowlist', function () {",
+              "  pm.expect(body.title).to.eql('Validation Error');",
+              "  pm.expect(body.detail).to.include('sort must be one of');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments?sort=amount,desc"
+      }
+    },
+    {
       "name": "Get payment",
       "event": [
         {
