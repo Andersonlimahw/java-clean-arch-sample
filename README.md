@@ -6,6 +6,9 @@ Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **C
 
 ## Architecture
 
+Diagrams, the HTTP contract, and the consistency model: [docs/architecture.md](docs/architecture.md).
+Trade-offs: [docs/adr](docs/adr).
+
 - **Modular Monolith**: base package `com.muse.payments` with verifiable architectural boundaries.
   - `identity`: User registration, authentication, token rotation, and RBAC.
   - `payments`: Payment aggregate root, state machine (PENDING → COMPLETED / CANCELLED), idempotency key deduplication, and optimistic locking.

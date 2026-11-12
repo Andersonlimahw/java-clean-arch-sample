@@ -1,6 +1,6 @@
 # ADR 0001 — Modular Monolith with Vertical Slices
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0002 (domain) and ADR 0003 (modular monolith)
 - **Date:** 2026-09-13
 - **Project:** `java-journey-muse-lab` (ported from `java-journey-lemon-lab`)
 - **Deciders:** Anderson Lima (Lemon) + Muse Code
