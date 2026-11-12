@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -65,9 +66,23 @@ class OtlpEndpointNormalizerTest {
     }
 
     @Test
+    @DisplayName("gRPC keeps the collector base URL")
+    void grpcTransportKeepsTheBaseUrl() {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setProperty(OtlpEndpointNormalizer.ENDPOINT, "http://otel-collector:4317");
+        environment.setProperty(OtlpEndpointNormalizer.TRANSPORT, "grpc");
+
+        OtlpEndpointNormalizer.apply(environment);
+
+        assertThat(environment.getProperty(OtlpEndpointNormalizer.ENDPOINT))
+                .isEqualTo("http://otel-collector:4317");
+        assertThat(environment.getPropertySources().contains(OtlpEndpointNormalizer.NORMALIZED_SOURCE)).isFalse();
+    }
+
+    @Test
     @DisplayName("The prod profile samples 10 percent and does not export without a collector URL")
     void prodProfileDoesNotExportWithoutACollector() {
-        StandardEnvironment environment = new StandardEnvironment();
+        StandardEnvironment environment = isolatedEnvironment();
         environment.setActiveProfiles("prod");
         ConfigDataEnvironmentPostProcessor.applyTo(
                 environment,
@@ -104,6 +119,7 @@ class OtlpEndpointNormalizerTest {
         try (ConfigurableApplicationContext context = application.run(
                 "--OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318")) {
             ConfigurableEnvironment environment = context.getEnvironment();
+            assertNormalizedSourcePrecedesConfig(environment);
             assertThat(environment.getProperty(OtlpEndpointNormalizer.ENDPOINT))
                     .isEqualTo("http://127.0.0.1:4318/v1/traces");
             assertThat(environment.getProperty(OtlpEndpointNormalizer.EXPORT_ENABLED)).isNull();
@@ -117,18 +133,45 @@ class OtlpEndpointNormalizerTest {
         application.setAdditionalProfiles("prod");
         try (ConfigurableApplicationContext context = application.run()) {
             ConfigurableEnvironment environment = context.getEnvironment();
+            assertNormalizedSourcePrecedesConfig(environment);
             assertThat(environment.getProperty("management.tracing.sampling.probability")).isEqualTo("0.1");
             assertThat(environment.getProperty(OtlpEndpointNormalizer.EXPORT_ENABLED)).isEqualTo("false");
             assertThat(environment.getProperty(OtlpEndpointNormalizer.ENDPOINT)).isBlank();
         }
     }
 
+    private static void assertNormalizedSourcePrecedesConfig(ConfigurableEnvironment environment) {
+        var sources = environment.getPropertySources();
+        assertThat(sources.contains(OtlpEndpointNormalizer.NORMALIZED_SOURCE)).isTrue();
+        int normalized = sources.precedenceOf(sources.get(OtlpEndpointNormalizer.NORMALIZED_SOURCE));
+        boolean sawApplicationConfig = false;
+        int index = 0;
+        for (var source : sources) {
+            if (source.getName().contains("application.yml") || source.getName().contains("application-prod.yml")) {
+                assertThat(index).isGreaterThan(normalized);
+                sawApplicationConfig = true;
+            }
+            index++;
+        }
+        assertThat(sawApplicationConfig).isTrue();
+    }
+
     private static SpringApplication probe() {
         SpringApplication application = new SpringApplication(NormalizerProbe.class);
+        application.setEnvironment(isolatedEnvironment());
         application.setWebApplicationType(WebApplicationType.NONE);
         application.setBannerMode(Banner.Mode.OFF);
         application.setLogStartupInfo(false);
+        application.setRegisterShutdownHook(false);
+        application.setDefaultProperties(Map.of("spring.config.location", "classpath:/application.yml"));
         return application;
+    }
+
+    private static StandardEnvironment isolatedEnvironment() {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+        environment.getPropertySources().remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
+        return environment;
     }
 
     /**
