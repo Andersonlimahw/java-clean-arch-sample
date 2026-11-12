@@ -10,15 +10,22 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -112,5 +119,75 @@ class PaymentCacheServiceTest {
         cacheService.evict(paymentId);
 
         verify(redisTemplate).delete("payment:cache:" + paymentId);
+    }
+
+    @Test
+    @DisplayName("getOrLoad lets one virtual thread load while the other waits, then drops the lock")
+    void getOrLoad_singleFlightOnVirtualThreads() throws Exception {
+        UUID paymentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        PaymentResponse response = new PaymentResponse(
+                paymentId, userId, new BigDecimal("10.00"), "BRL", "Flight",
+                PaymentStatus.PENDING, Instant.parse("2026-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:00:00Z"), 0L
+        );
+        String key = "payment:cache:" + paymentId;
+        AtomicReference<String> stored = new AtomicReference<>();
+        when(valueOperations.get(key)).thenAnswer(invocation -> stored.get());
+        doAnswer(invocation -> {
+            stored.set(invocation.getArgument(1));
+            return null;
+        }).when(valueOperations).set(eq(key), any(), eq(Duration.ofMinutes(5)));
+
+        AtomicInteger loads = new AtomicInteger();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread first = Thread.ofVirtual().start(() -> cacheService.getOrLoad(paymentId, () -> {
+            loads.incrementAndGet();
+            entered.countDown();
+            await(release);
+            return response;
+        }));
+
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+
+        Thread second = Thread.ofVirtual().start(() -> cacheService.getOrLoad(paymentId, () -> {
+            loads.incrementAndGet();
+            return response;
+        }));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (second.getState() != Thread.State.WAITING) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("second load did not park on the key lock; loads=" + loads.get());
+            }
+            Thread.onSpinWait();
+        }
+        assertThat(loads.get()).isEqualTo(1);
+
+        release.countDown();
+        first.join(5_000);
+        second.join(5_000);
+
+        assertThat(loads.get()).isEqualTo(1);
+        assertThat(first.isAlive()).isFalse();
+        assertThat(second.isAlive()).isFalse();
+        assertThat(flights()).isEmpty();
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("timed out waiting for the cache loader");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<UUID, ?> flights() throws Exception {
+        Field field = PaymentCacheService.class.getDeclaredField("flights");
+        field.setAccessible(true);
+        return (Map<UUID, ?>) field.get(cacheService);
     }
 }
