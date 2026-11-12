@@ -68,10 +68,14 @@ management:
       probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
   otlp:
     tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+      # Base URL (OTEL spec) or full traces URL. OtlpEndpointNormalizer appends /v1/traces when missing.
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}}
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      slo:
+        http.server.requests: 100ms,300ms,500ms,1s
 
 logging:
   pattern:
