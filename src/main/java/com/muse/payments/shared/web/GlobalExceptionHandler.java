@@ -4,10 +4,15 @@ import com.muse.payments.shared.domain.ConflictException;
 import com.muse.payments.shared.domain.EntityNotFoundException;
 import com.muse.payments.shared.domain.RateLimitExceededException;
 import com.muse.payments.shared.domain.ValidationException;
+import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.hibernate.StaleObjectStateException;
+import org.hibernate.StaleStateException;
+import org.hibernate.dialect.lock.OptimisticEntityLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -41,9 +46,21 @@ public class GlobalExceptionHandler {
         return createProblemDetail(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
     }
 
-    @ExceptionHandler({ObjectOptimisticLockingFailureException.class, jakarta.persistence.OptimisticLockException.class})
+    @ExceptionHandler({
+            OptimisticLockingFailureException.class,
+            ObjectOptimisticLockingFailureException.class,
+            OptimisticLockException.class,
+            StaleObjectStateException.class,
+            StaleStateException.class,
+            OptimisticEntityLockException.class
+    })
     public ProblemDetail handleOptimisticLock(Exception ex, HttpServletRequest request) {
-        return createProblemDetail(HttpStatus.CONFLICT, "Concurrent Modification", "The resource was modified concurrently. Please retry.", request);
+        return createProblemDetail(
+                HttpStatus.CONFLICT,
+                "Concurrent Modification",
+                "The resource was modified concurrently. Please retry.",
+                request
+        );
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
