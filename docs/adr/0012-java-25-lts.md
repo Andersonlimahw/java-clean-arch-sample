@@ -5,19 +5,33 @@
 
 ## Context
 
-The payments platform compiled and ran on Java 21. Java 25 is the current LTS. [Spring Boot 3.5.16](https://docs.spring.io/spring-boot/3.5/system-requirements.html) already supports Java 17 through Java 25, so the runtime can move without a Spring Boot 4 upgrade.
+The payments platform compiled and ran on Java 21. Java 25 is the current LTS. [Spring Boot 3.5.16](https://docs.spring.io/spring-boot/3.5/system-requirements.html) supports Java 17 through Java 25, so the runtime can move without a Spring Boot 4 upgrade.
+
+The baseline in [spec 000](../../specs/000-master-plan.md) was Java 21. Moving that baseline to Java 25 was requested by Lemon and is approved via the micro1 expert review gate.
 
 [ADR 0001](0001-modular-monolith-vertical-slices.md) still says the superseded trip-planner was Java 21. That sentence is history for `java-journey-lemon-lab`, not the payments runtime.
 
 ## Decision
 
-Compile and run on Java 25. `java.version` and `maven.compiler.release` are 25. The Maven enforcer rule requires a JDK ≥ 25. Images stay on the same Alpine tags the Dockerfile already used, with the major version moved to 25: `eclipse-temurin:25-jdk-alpine` to build and `eclipse-temurin:25-jre-alpine` to run. CI uses Temurin 25.
+Compile and run on Java 25. `java.version` is 25. The Spring Boot parent sets `maven.compiler.release` from that property. `.java-version` is the same value, and CI reads it with `java-version-file`. The Maven enforcer rule is `[${java.version},26)`, so the build accepts 25 and rejects 26.
 
-Stay on Spring Boot 3.5.16. Do not change application code for this move.
+The Dockerfile declares `ARG JAVA_MAJOR=25` before the first `FROM` and uses it in both stages: `maven:3.9-eclipse-temurin-${JAVA_MAJOR}-alpine` to build, `eclipse-temurin:${JAVA_MAJOR}-jre-alpine` to run.
+
+Stay on Spring Boot 3.5.16. No application source change for this move.
 
 ## Consequences
 
-- Bytecode is class-file major version 69. ArchUnit 1.4.2 already reads it. Spring Boot 3.5.16 manages Byte Buddy 1.17.8, Lombok 1.18.46, Flyway 11.7.2, and the compiler, Surefire, and Failsafe plugins that this build uses.
-- JaCoCo is not configured, and Lombok is not a source dependency. Neither version is pinned here.
-- Image JVM flags (`UseContainerSupport`, `MaxRAMPercentage`, `ExitOnOutOfMemoryError`) are still accepted on JDK 25. Layers, user, and the Compose healthcheck are unchanged.
-- Merge this after in-flight feature branches, and update it from `main` before merge, so those branches are not rebased onto a new bytecode level mid-review.
+- Bytecode is class-file major version 69. ArchUnit 1.4.2 already reads it. Spring Boot 3.5.16 manages Byte Buddy 1.17.8, Flyway 11.7.2, and the compiler, Surefire, and Failsafe plugins that this build uses. Lombok is not used.
+- Since JDK 23, javac does not run annotation processors that sit only on the classpath. `spring-modulith-starter-core` brings `spring-modulith-apt` (`SpringModulithProcessor`), and that artifact brings `spring-boot-configuration-processor`. The compiler plugin lists both on `annotationProcessorPaths`, with versions taken from the Boot parent and the Modulith BOM, and sets `<proc>full</proc>`. That restores `target/classes/META-INF/spring-configuration-metadata.json` (`JwtProperties`, prefix `app.jwt`) and `target/generated-spring-modulith/javadoc.json`, which `ModularityTest`'s `Documenter` reads.
+- `application.yml` enables virtual threads (`spring.threads.virtual.enabled: true`). `PaymentCacheService.getOrLoad` holds `synchronized` on a per-id lock while it reads Redis and, on a miss, runs the caller's database loader and writes Redis back (`PaymentCacheService.java` around line 131). On JDK 21 that `synchronized` block pinned the carrier thread for the I/O. From JDK 24 (JEP 491) `synchronized` does not pin the carrier. The source is unchanged. This scheduling difference can change the Concurrency PR's pinning analysis, which may have been written against the JDK 21 pin.
+- Surefire and Failsafe pass `-javaagent` on the Mockito jar (resolved by `maven-dependency-plugin:properties`) so the inline mock maker does not self-attach.
+- Image JVM flags (`UseContainerSupport`, `MaxRAMPercentage`, `ExitOnOutOfMemoryError`) are still accepted on JDK 25. The Compose healthcheck still calls BusyBox `wget` on the Alpine JRE image.
+- JDK 24 disables the `TLS_RSA_*` cipher suites by default. This service does not set a custom cipher list, so it follows that platform default.
+
+## Alternatives
+
+| Option | Why not |
+|---|---|
+| Stay on Java 21 until Spring Boot 4 | Boot 3.5.16 already runs on Java 25. Staying on 21 keeps the carrier pin inside `PaymentCacheService` and leaves the current LTS unused. |
+| Spring Boot 4 and Java 25 | Boot 4 is a framework major (Spring Framework 7). It is not required to compile or run on Java 25. |
+| Ubuntu Jammy Temurin images | The runtime is Alpine. Jammy would replace `addgroup`/`adduser` and the BusyBox `wget` healthcheck with a different base OS. |

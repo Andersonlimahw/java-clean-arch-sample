@@ -1,6 +1,6 @@
 # Deploy
 
-The artifact is the Docker image built from the repository `Dockerfile`. The build stage is Eclipse Temurin JDK 25 and the runtime stage is Eclipse Temurin JRE 25. Railway, Render, Cloud Run, and Kubernetes all run that image. One process serves HTTP, relays the outbox, and consumes notification messages. PostgreSQL is the source of truth. Redis and RabbitMQ are required beside it.
+The artifact is the Docker image built from the repository `Dockerfile`. `ARG JAVA_MAJOR=25` selects `maven:3.9-eclipse-temurin-25-alpine` for the build and `eclipse-temurin:25-jre-alpine` for the runtime. Railway, Render, Cloud Run, and Kubernetes all run that image. One process serves HTTP, relays the outbox, and consumes notification messages. PostgreSQL is the source of truth. Redis and RabbitMQ are required beside it.
 
 Do not deploy this service to Vercel Functions. The relay and the RabbitMQ listener are loops, not request handlers. That choice is [ADR 0011](adr/0011-railway-vs-other-hosting.md). Local Compose versus the Kubernetes shape is [ADR 0010](adr/0010-compose-vs-kubernetes.md). The runtime those decisions assume is [the architecture page](architecture.md).
 
