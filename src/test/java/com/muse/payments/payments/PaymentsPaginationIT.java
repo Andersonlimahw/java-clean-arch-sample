@@ -95,11 +95,22 @@ class PaymentsPaginationIT extends TestcontainersBase {
                 (rs, rowNum) -> rs.getObject(1, UUID.class),
                 userId
         );
-        JsonNode ascending = list(token, 0, 20, "createdAt,asc");
-        List<UUID> ascIds = new ArrayList<>();
-        ascending.get("items").forEach(item -> ascIds.add(UUID.fromString(item.get("id").asText())));
-        assertThat(ascIds).containsExactlyElementsOf(expectedAsc);
-        assertThat(ascending.get("sort").asText()).isEqualTo("createdAt,asc");
+        assertThat(expectedAsc.indexOf(TIED_LOW)).isLessThan(expectedAsc.indexOf(TIED_HIGH));
+        assertThat(expectedAsc.indexOf(TIED_HIGH) - expectedAsc.indexOf(TIED_LOW)).isEqualTo(1);
+
+        List<UUID> seenAsc = new ArrayList<>();
+        for (int page = 0; page < 3; page++) {
+            JsonNode body = list(token, page, 2, "createdAt,asc");
+            assertThat(body.get("page").asInt()).isEqualTo(page);
+            assertThat(body.get("size").asInt()).isEqualTo(2);
+            assertThat(body.get("sort").asText()).isEqualTo("createdAt,asc");
+            assertThat(body.get("items").size()).isEqualTo(page < 2 ? 2 : 1);
+            for (JsonNode item : body.get("items")) {
+                seenAsc.add(UUID.fromString(item.get("id").asText()));
+            }
+        }
+        assertThat(seenAsc).containsExactlyElementsOf(expectedAsc);
+        assertThat(seenAsc).doesNotHaveDuplicates();
 
         JsonNode defaults = list(token, null, null, null);
         assertThat(defaults.get("page").asInt()).isZero();
@@ -122,7 +133,17 @@ class PaymentsPaginationIT extends TestcontainersBase {
         expectInvalid(token, "0", "-1", null, "size must be between 1 and 100");
         expectInvalid(token, "0", "101", null, "size must be between 1 and 100");
         expectInvalid(token, "0", "20", "amount,desc", "sort must be one of: createdAt,desc, createdAt,asc");
-        expectInvalid(token, "0", "100", "createdAt,desc", null);
+        expectInvalid(token, "0", "20", "createdAt,DESC", "sort must be one of: createdAt,desc, createdAt,asc");
+        expectInvalid(token, "501", "20", null, "page is too large; page * size must be <= 10000");
+        expectInvalid(token, "21474837", "100", null, "page is too large; page * size must be <= 10000");
+        expectInvalid(token, "500", "20", "createdAt,desc", null);
+
+        mockMvc.perform(get("/api/v1/payments")
+                        .param("page", "0")
+                        .param("size", "100")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(100));
 
         mockMvc.perform(get("/api/v1/payments")
                         .param("page", "abc")
@@ -140,6 +161,41 @@ class PaymentsPaginationIT extends TestcontainersBase {
                 .andExpect(jsonPath("$.detail").value("Invalid value for parameter 'size'"));
     }
 
+    @Test
+    @DisplayName("A payment id that is not a UUID is HTTP 400")
+    void rejectsNonUuidPaymentId() throws Exception {
+        String token = jwtTokenIssuer.issueAccessToken(UUID.randomUUID(), List.of("USER"));
+
+        mockMvc.perform(get("/api/v1/payments/not-a-uuid")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.title").value("Validation Error"))
+                .andExpect(jsonPath("$.detail").value("Invalid value for parameter 'id'"));
+    }
+
+    @Test
+    @DisplayName("Spring joins repeated sort parameters with a comma")
+    void repeatedSortParametersAreJoined() throws Exception {
+        String token = jwtTokenIssuer.issueAccessToken(UUID.randomUUID(), List.of("USER"));
+
+        mockMvc.perform(get("/api/v1/payments")
+                        .param("sort", "createdAt")
+                        .param("sort", "desc")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sort").value("createdAt,desc"));
+
+        mockMvc.perform(get("/api/v1/payments")
+                        .param("sort", "createdAt,desc")
+                        .param("sort", "createdAt,asc")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Error"))
+                .andExpect(jsonPath("$.detail").value("sort must be one of: createdAt,desc, createdAt,asc"));
+    }
+
     private void expectInvalid(String token, String page, String size, String sort, String detail) throws Exception {
         var request = get("/api/v1/payments")
                 .param("page", page)
@@ -149,7 +205,7 @@ class PaymentsPaginationIT extends TestcontainersBase {
             request = request.param("sort", sort);
         }
         if (detail == null) {
-            mockMvc.perform(request).andExpect(status().isOk()).andExpect(jsonPath("$.size").value(100));
+            mockMvc.perform(request).andExpect(status().isOk());
             return;
         }
         mockMvc.perform(request)

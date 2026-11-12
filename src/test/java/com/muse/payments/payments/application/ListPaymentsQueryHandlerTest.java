@@ -73,6 +73,9 @@ class ListPaymentsQueryHandlerTest {
         assertThatThrownBy(() -> handler.handle(new ListPaymentsQuery(USER_ID, 0, 20, "amount,desc")))
                 .isInstanceOf(ValidationException.class)
                 .hasMessage("sort must be one of: createdAt,desc, createdAt,asc");
+        assertThatThrownBy(() -> handler.handle(new ListPaymentsQuery(USER_ID, 0, 20, "createdAt,DESC")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("sort must be one of: createdAt,desc, createdAt,asc");
 
         PageResponse<PaymentResponse> blank = handler.handle(new ListPaymentsQuery(USER_ID, 0, 20, "  "));
         PageResponse<PaymentResponse> padded = handler.handle(new ListPaymentsQuery(USER_ID, 0, 20, " createdAt,asc "));
@@ -80,6 +83,25 @@ class ListPaymentsQueryHandlerTest {
         assertThat(blank.sort()).isEqualTo("createdAt,desc");
         assertThat(padded.sort()).isEqualTo("createdAt,asc");
         assertThat(repository.requestedSorts).containsExactly(PaymentSort.CREATED_AT_DESC, PaymentSort.CREATED_AT_ASC);
+    }
+
+    @Test
+    @DisplayName("Offset above 10000 is rejected, including a product past Integer.MAX_VALUE")
+    void rejectsOffsetAboveCap() {
+        RecordingRepository repository = new RecordingRepository();
+        ListPaymentsQueryHandler handler = new ListPaymentsQueryHandler(repository);
+
+        assertThatThrownBy(() -> handler.handle(new ListPaymentsQuery(USER_ID, 501, 20)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("page is too large; page * size must be <= 10000");
+        assertThatThrownBy(() -> handler.handle(new ListPaymentsQuery(USER_ID, 21474837, 100)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("page is too large; page * size must be <= 10000");
+
+        PageResponse<PaymentResponse> edge = handler.handle(new ListPaymentsQuery(USER_ID, 500, 20));
+        assertThat(edge.page()).isEqualTo(500);
+        assertThat(edge.size()).isEqualTo(20);
+        assertThat(repository.requestedSizes).containsExactly(20);
     }
 
     @Test

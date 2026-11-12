@@ -1,15 +1,12 @@
 # Payment list pagination
 
-`GET /api/v1/payments` is an offset page. It filters `payments.user_id` and orders by `created_at DESC, id DESC`, or by `created_at ASC, id ASC` when `sort=createdAt,asc`. Migration `V6__payments_list_index.sql` adds:
+`GET /api/v1/payments` filters `payments.user_id` and orders by `created_at DESC, id DESC` (or `created_at ASC, id ASC`). The migration whose version token is `PAYMENTS_LIST_INDEX_VERSION` in `src/main/resources/db/migration` builds `idx_payments_user_created_at_id` on `(user_id, created_at DESC, id DESC)` with `CREATE INDEX CONCURRENTLY`, then drops `idx_payments_created_at` and `idx_payments_user_status`.
 
-```sql
-CREATE INDEX idx_payments_user_created_at_id
-    ON payments (user_id, created_at DESC, id DESC);
-```
+## Version
 
-`V6` is the next free version after `V5` on main `745f822`. The statement depends only on `payments` from `V3`. Renumber the file before merge if another branch already claimed `V6`.
+`PAYMENTS_LIST_INDEX_VERSION=V6` is only in that SQL comment, plus the filename `V6__payments_list_index.sql` and `V6__payments_list_index.sql.conf`. Main `745f822` ends at V5. PR #15 is still open and also uses V6 (`V6__payment_version.sql`). Renumber both files before merge if version 6 is taken. Do not edit the script after a shared database has applied it.
 
-Early pages use that index. A deep offset that reads most of one user's rows can still pick `idx_payments_user_status` and sort, which is what PostgreSQL 16 chose for `OFFSET 2000` below. The plans are the real `EXPLAIN (ANALYZE, BUFFERS)` output from this VM.
+`CREATE INDEX CONCURRENTLY` is outside a transaction (`executeInTransaction=false`) and needs `spring.flyway.postgresql.transactional-lock=false`, because Flyway's default Postgres lock is transactional and would reject `CONCURRENTLY`. There is no `IF NOT EXISTS`: a failed build can leave an `INVALID` index, and the next attempt must drop it instead of skipping it. The two V3 indexes are unused: no payment query filters by `status` or orders by `created_at` alone. `countByUserId` and the page query both use the leading `user_id` of the new index.
 
 ## Stack
 
@@ -17,142 +14,75 @@ From the repository root, with Docker running:
 
 ```bash
 docker compose up -d --build
-```
-
-That starts PostgreSQL 16, Redis 7, RabbitMQ 3.13, and the application on `127.0.0.1:8080`. The Compose file defaults `SPRING_PROFILES_ACTIVE` to `local`, so a blank JWT key pair is generated in the container. No production secrets are required. Wait until readiness is up:
-
-```bash
 curl -fsS http://127.0.0.1:8080/actuator/health/readiness
 ```
 
+Compose starts PostgreSQL 16, Redis 7, RabbitMQ 3.13, and the app. `SPRING_PROFILES_ACTIVE` defaults to `local`, so a blank JWT key pair is generated in the container.
+
 ## Seed
 
-`perf/seed-payments.sh` registers a user, logs in, and inserts `ROWS` payments (default 10000) for that user. Pairs of rows share `created_at`, so the `id` tie-break is part of the order. The access token is written to `/tmp/payments-k6-token` and is not committed.
+`perf/seed-payments.sh` needs `curl` and `docker compose`. It does not need host `psql` or host `python`. Register goes through the API. The rows are inserted with `docker compose exec` into Postgres, bypassing payment create, then `ANALYZE payments` runs. Default is 10000 rows for the registered user (mixed status, paired `created_at`) and 20000 rows for other users.
 
 ```bash
-ROWS=10000 ./perf/seed-payments.sh
+ROWS=10000 OTHER_ROWS=20000 ./perf/seed-payments.sh
 ```
+
+Credentials go to `/tmp/payments-k6.env` (mode 600). They are not committed. Each k6 run logs in from `setup()`, so a token older than 15 minutes (`app.jwt.access-token-ttl`) is not reused.
 
 ## k6
 
-`perf/list-payments.js` walks pages 0, 1, and 2 with `size=20` and `sort=createdAt,desc`, then requests page 0 with `sort=createdAt,asc`. Five virtual users run for 30 seconds. Thresholds: `http_req_failed` rate under 1%, and `http_req_duration` p95 under 500 ms.
+Two scenarios run together for 30 seconds with 5 VUs each:
+
+- `early`: pages 0, 1, and 2 at `size=20`, plus page 0 ascending.
+- `deep`: a random page in the upper half of the caller's pages, still inside the offset cap (`page * size <= 10000`).
+
+Thresholds: `http_req_failed` rate under 1%, `checks` rate above 0.99, and `http_req_duration` p95 under 50 ms for both `early_pages` and `deep_pages`.
 
 ```bash
 ./perf/run-k6.sh
 ```
 
-`run-k6.sh` uses `docker run --rm --network host` and `grafana/k6:0.57.0`. Host networking is required because Compose publishes the API on `127.0.0.1:8080`.
+The default attaches k6 to the Compose network of `payments-app` and calls `http://app:8080`. That works on Docker Desktop. `K6_NETWORK_MODE=host` is optional and calls `http://127.0.0.1:8080`. `run-k6.sh` passes `PAYMENTS_EMAIL` and `PAYMENTS_PASSWORD` through the environment (`-e NAME` with no value on the command line).
 
 ## EXPLAIN
 
-Captured on this VM (`Linux 6.12.113+`) against `postgres:16-alpine` (PostgreSQL 16.15). The table had 200000 rows: 2500 for the listed user and the rest spread across other users, with `created_at` scattered. `ANALYZE` ran before each plan. The statement selects the payment columns with `LIMIT 20`.
+`./perf/explain.sh` starts a throwaway `postgres:16-alpine`, loads 200000 rows (2500 for user `11111111-1111-1111-1111-111111111111`, `g % 80 = 0`, scattered `created_at`), runs `ANALYZE`, and writes `perf/explain-before.txt` and `perf/explain-after.txt`. The statements are the Hibernate 6 text (`pje1_0`, `OFFSET ... FETCH FIRST`) for the page query and `select count(pje1_0.id) ... where user_id = ?`.
 
-Before `idx_payments_user_created_at_id` (only `payments_pkey`, `idx_payments_user_status`, and `idx_payments_created_at`):
+Captured on this VM (`Linux 6.12.113+`, PostgreSQL 16.15) by that script:
 
-```text
--- page 2 (LIMIT 20 OFFSET 40), ORDER BY created_at DESC, id DESC
- Limit  (cost=304.11..452.26 rows=20 width=81) (actual time=1.249..1.252 rows=20 loops=1)
-   Buffers: shared hit=4913
-   ->  Incremental Sort  (cost=7.80..18727.15 rows=2527 width=81) (actual time=0.777..1.247 rows=60 loops=1)
-         Sort Key: created_at DESC, id DESC
-         Presorted Key: created_at
-         Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB
-         Buffers: shared hit=4913
-         ->  Index Scan using idx_payments_created_at on payments  (cost=0.42..18613.44 rows=2527 width=81) (actual time=0.138..1.174 rows=61 loops=1)
-               Filter: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-               Rows Removed by Filter: 4819
-               Buffers: shared hit=4904
- Planning Time: 0.848 ms
- Execution Time: 1.313 ms
+Before the new index, page 2 (`OFFSET 40`) is an incremental sort over `idx_payments_created_at` (4819 rows removed by the user filter), **1.362 ms**. `OFFSET 2000` is a bitmap on `idx_payments_user_status` plus a sort of 2500 rows, **7.336 ms**. The count is the same bitmap, **5.953 ms**.
 
--- deeper page (LIMIT 20 OFFSET 2000), ORDER BY created_at DESC, id DESC
- Limit  (cost=3108.56..3108.61 rows=20 width=81) (actual time=5.095..5.098 rows=20 loops=1)
-   Buffers: shared hit=2509
-   ->  Sort  (cost=3103.56..3109.87 rows=2527 width=81) (actual time=4.952..5.036 rows=2020 loops=1)
-         Sort Key: created_at DESC, id DESC
-         Sort Method: quicksort  Memory: 429kB
-         Buffers: shared hit=2509
-         ->  Bitmap Heap Scan on payments  (cost=35.88..2960.74 rows=2527 width=81) (actual time=0.522..4.317 rows=2500 loops=1)
-               Recheck Cond: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-               Heap Blocks: exact=2500
-               Buffers: shared hit=2503
-               ->  Bitmap Index Scan on idx_payments_user_status  (cost=0.00..35.25 rows=2527 width=0) (actual time=0.293..0.293 rows=2500 loops=1)
-                     Index Cond: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-                     Buffers: shared hit=3
- Planning Time: 0.605 ms
- Execution Time: 5.202 ms
-```
+After `idx_payments_user_created_at_id` and the two drops, page 2 is an index scan on that index with no sort node, **0.330 ms**. Ascending page 2 is an index scan backward, **0.275 ms**. `OFFSET 2000` is still a bitmap plus sort, now on `idx_payments_user_created_at_id`, **6.820 ms**, because that page reads most of the user's 2500 rows. The count uses the same bitmap, **4.778 ms**. Every list request runs that count; it is O(rows for the user). The handler does not skip it: `totalElements` is part of the contract on every page, and a short page is not proof that no later row exists.
 
-After `CREATE INDEX idx_payments_user_created_at_id` and `ANALYZE`:
+## Limits and follow-up
 
-```text
--- page 2 (LIMIT 20 OFFSET 40), ORDER BY created_at DESC, id DESC
- Limit  (cost=116.93..175.19 rows=20 width=81) (actual time=0.161..0.195 rows=20 loops=1)
-   Buffers: shared hit=60 read=4
-   ->  Index Scan using idx_payments_user_created_at_id on payments  (cost=0.42..6603.88 rows=2267 width=81) (actual time=0.036..0.190 rows=60 loops=1)
-         Index Cond: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-         Buffers: shared hit=60 read=4
- Planning Time: 0.936 ms
- Execution Time: 0.247 ms
-
--- deeper page (LIMIT 20 OFFSET 2000), ORDER BY created_at DESC, id DESC
- Limit  (cost=3016.99..3017.04 rows=20 width=81) (actual time=4.863..4.866 rows=20 loops=1)
-   Buffers: shared hit=2509
-   ->  Sort  (cost=3011.99..3017.65 rows=2267 width=81) (actual time=4.711..4.804 rows=2020 loops=1)
-         Sort Key: created_at DESC, id DESC
-         Sort Method: quicksort  Memory: 429kB
-         Buffers: shared hit=2509
-         ->  Bitmap Heap Scan on payments  (cost=33.86..2885.64 rows=2267 width=81) (actual time=0.547..4.052 rows=2500 loops=1)
-               Recheck Cond: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-               Heap Blocks: exact=2500
-               Buffers: shared hit=2503
-               ->  Bitmap Index Scan on idx_payments_user_status  (cost=0.00..33.30 rows=2267 width=0) (actual time=0.319..0.319 rows=2500 loops=1)
-                     Index Cond: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-                     Buffers: shared hit=3
- Planning Time: 0.706 ms
- Execution Time: 4.963 ms
-
--- page 2 (LIMIT 20 OFFSET 40), ORDER BY created_at ASC, id ASC
- Limit  (cost=116.93..175.19 rows=20 width=81) (actual time=0.163..0.185 rows=20 loops=1)
-   Buffers: shared hit=62 read=1
-   ->  Index Scan Backward using idx_payments_user_created_at_id on payments  (cost=0.42..6603.88 rows=2267 width=81) (actual time=0.037..0.180 rows=60 loops=1)
-         Index Cond: (user_id = '11111111-1111-1111-1111-111111111111'::uuid)
-         Buffers: shared hit=62 read=1
- Planning Time: 0.827 ms
- Execution Time: 0.236 ms
-```
-
-Full text, including buffer and planning lines: `perf/explain-before.txt` and `perf/explain-after.txt`.
-
-Page 2 drops from an incremental sort over `idx_payments_created_at` (4819 rows removed by the user filter, 1.313 ms) to an index scan on `idx_payments_user_created_at_id` with no sort node (0.247 ms). Ascending order is the same index scanned backward. `OFFSET 2000` still sorts after `idx_payments_user_status`, because that page reads most of the user's 2500 rows.
+`page * size` above 10000 is HTTP 400, so a caller cannot ask for an unbounded deep offset. Within the cap, offset pages are stable only for a static dataset. A concurrent insert at the head can duplicate a row on the next page, and the count can disagree with `items`. A keyset cursor on `(created_at, id)` is the follow-up when a client needs to walk past the cap, or walk a list that is being written, without those shifts. It is not in this change.
 
 ## Measured k6 run
 
-Ran on this VM after `docker compose up -d --build`. Postgres, Redis, RabbitMQ, and the app were the Compose services. Inter-container traffic on this Docker 29 bridge needed `net.bridge.bridge-nf-call-iptables=0` before the app container could open Postgres; the published `127.0.0.1` ports were already reachable from the host. Seed was `ROWS=10000 ./perf/seed-payments.sh` (10000 payments for one user). k6 was `grafana/k6:0.57.0` via `./perf/run-k6.sh` (`docker run --network host`).
-
-Environment: Linux 6.12.113+, Docker 29.1.3, Compose 2.40.3, app container Eclipse Temurin 21.0.13, PostgreSQL 16.15, 4 CPUs, about 16 GiB RAM. Thresholds in the script: `http_req_failed` rate < 1% and `http_req_duration` p95 < 500 ms. Both passed.
+Second run on this VM after the per-scenario thresholds were set to 50 ms. `docker compose up -d --build` on a fresh volume, `ROWS=10000 OTHER_ROWS=20000 ./perf/seed-payments.sh`, then `./perf/run-k6.sh` (`grafana/k6:0.57.0` on the Compose network, `BASE_URL=http://app:8080`). Environment: Linux 6.12.113+, Docker 29.1.3, Compose 2.40.3, app Temurin 21.0.13, PostgreSQL 16.15, 4 CPUs, about 16 GiB RAM. Both scenario thresholds passed.
 
 ```text
-     checks.........................: 100.00% 9254 out of 9254
-     data_received..................: 15 MB   480 kB/s
-     data_sent......................: 2.2 MB  74 kB/s
-     http_req_blocked...............: avg=9.57µs   min=1.03µs   med=3.17µs   max=2.73ms   p(90)=5.41µs   p(95)=7.14µs
-     http_req_connecting............: avg=3.47µs   min=0s       med=0s       max=2.69ms   p(90)=0s       p(95)=0s
-   ✓ http_req_duration..............: avg=6.47ms   min=2.49ms   med=5.19ms   max=39.67ms  p(90)=10.79ms  p(95)=14.72ms
-       { expected_response:true }...: avg=6.47ms   min=2.49ms   med=5.19ms   max=39.67ms  p(90)=10.79ms  p(95)=14.72ms
-   ✓ http_req_failed................: 0.00%   0 out of 2645
-     http_req_receiving.............: avg=380.86µs min=16.97µs  med=229.02µs max=19.75ms  p(90)=790.36µs p(95)=1.16ms
-     http_req_sending...............: avg=16.29µs  min=3.35µs   med=9.35µs   max=2.84ms   p(90)=18µs     p(95)=23.74µs
-     http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
-     http_req_waiting...............: avg=6.07ms   min=2.36ms   med=4.89ms   max=39.12ms  p(90)=10.03ms  p(95)=14ms
-     http_reqs......................: 2645    87.776625/s
-     iteration_duration.............: avg=227.67ms min=212.13ms med=224.56ms max=304.69ms p(90)=244.57ms p(95)=256.08ms
-     iterations.....................: 661     21.93586/s
-     vus............................: 5       min=5            max=5
-     vus_max........................: 5       min=5            max=5
+   ✓ checks.........................: 100.00% 12658 out of 12658
+     http_req_duration..............: avg=4.23ms   min=1.87ms   med=3.49ms   max=321.29ms p(90)=6.57ms   p(95)=8.16ms
+     ✓ { scenario:deep_pages }......: avg=6.22ms   min=2.77ms   med=5.54ms   max=27.16ms  p(90)=8.88ms   p(95)=11.33ms
+     ✓ { scenario:early_pages }.....: avg=3.6ms    min=1.87ms   med=3.1ms    max=21.79ms  p(90)=5.27ms   p(95)=6.61ms
+   ✓ http_req_failed................: 0.00%   0 out of 3516
+     http_reqs......................: 3516    115.273711/s
+     iterations.....................: 1422    46.620938/s
 
-running (0m30.1s), 0/5 VUs, 661 complete and 0 interrupted iterations
-default ✓ [ 100% ] 5 VUs  30s
+running (0m30.5s), 00/10 VUs, 1422 complete and 0 interrupted iterations
+deep_pages  ✓ [ 100% ] 5 VUs  30s
+early_pages ✓ [ 100% ] 5 VUs  30s
 ```
 
-Measured `http_req_duration` p95 is **14.72 ms**. Error rate is **0%** (0 failed of 2645 requests).
+**early_pages p95: 6.61 ms. deep_pages p95: 11.33 ms.** Error rate 0% (0 of 3516). Checks 12658/12658. The 321.29 ms max is outside the scenario sub-metrics (setup login and the first list).
+
+## Troubleshooting
+
+These are not required steps.
+
+- Compose containers cannot reach each other, while `127.0.0.1` published ports work: on this measuring VM, Docker 29's bridge netfilter dropped that traffic until `sudo sysctl -w net.bridge.bridge-nf-call-iptables=0` and the IPv6 equivalent. Recheck with `docker compose exec postgres nc -zvw2 redis 6379`.
+- k6 returns 401: `setup()` logs in on every run. If register was rate-limited (20 auth calls per minute per IP), wait and rerun `perf/seed-payments.sh`.
+- Flyway reports the list index already exists and is `INVALID`: `DROP INDEX CONCURRENTLY idx_payments_user_created_at_id` and rerun the migration. The script has no `IF NOT EXISTS`.
+- The Compose project name is not `java-clean-arch-sample`: `run-k6.sh` reads the network from the `payments-app` container. Set `K6_NETWORK` if that container is not running.

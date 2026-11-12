@@ -15,6 +15,7 @@ import java.util.Objects;
 public class ListPaymentsQueryHandler implements QueryHandler<ListPaymentsQuery, PageResponse<PaymentResponse>> {
 
     public static final int MAX_PAGE_SIZE = 100;
+    public static final int MAX_OFFSET = 10_000;
 
     private final PaymentRepository paymentRepository;
 
@@ -35,7 +36,10 @@ public class ListPaymentsQueryHandler implements QueryHandler<ListPaymentsQuery,
         if (size < 1 || size > MAX_PAGE_SIZE) {
             throw new ValidationException("size must be between 1 and 100");
         }
-        PaymentSort sort = PaymentSort.fromQuery(query.sort());
+        if ((long) page * (long) size > MAX_OFFSET) {
+            throw new ValidationException("page is too large; page * size must be <= " + MAX_OFFSET);
+        }
+        PaymentSort sort = PaymentSorts.parse(query.sort());
 
         List<Payment> payments = paymentRepository.findByUserId(query.userId(), page, size, sort);
         long total = paymentRepository.countByUserId(query.userId());
@@ -44,6 +48,6 @@ public class ListPaymentsQueryHandler implements QueryHandler<ListPaymentsQuery,
                 .map(PaymentResponse::from)
                 .toList();
 
-        return PageResponse.of(dtos, page, size, total, sort.queryValue());
+        return PageResponse.of(dtos, page, size, total, PaymentSorts.canonical(sort));
     }
 }

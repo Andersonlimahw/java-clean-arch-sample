@@ -257,6 +257,32 @@
       }
     },
     {
+      "name": "List payments rejects an offset above 10000",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('offset cap', function () {",
+              "  pm.expect(body.title).to.eql('Validation Error');",
+              "  pm.expect(body.detail).to.eql('page is too large; page * size must be <= 10000');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments?page=21474837&size=100"
+      }
+    },
+    {
       "name": "List payments rejects sort outside the allowlist",
       "event": [
         {

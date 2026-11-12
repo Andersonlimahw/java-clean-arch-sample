@@ -22,6 +22,7 @@ import com.muse.payments.shared.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -31,6 +32,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -164,6 +166,14 @@ public class PaymentController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Get payment details by ID")
+    @ApiResponse(
+            responseCode = "400",
+            description = "id is not a UUID",
+            content = @Content(
+                    mediaType = "application/problem+json",
+                    schema = @Schema(implementation = ProblemDetail.class)
+            )
+    )
     public ResponseEntity<PaymentResponse> getPaymentById(
             @PathVariable UUID id,
             CurrentUser currentUser
@@ -178,27 +188,39 @@ public class PaymentController {
     @Operation(
             summary = "List current user payments with offset pagination",
             description = "Owner-scoped offset page. Default page is 0 and default size is 20. "
-                    + "page must be an integer >= 0. size must be an integer from 1 to 100. "
-                    + "sort allowlist is createdAt,desc (default) and createdAt,asc. "
+                    + "page must be an integer >= 0 and page * size must be <= 10000. "
+                    + "size must be an integer from 1 to 100. "
+                    + "sort is case-sensitive: createdAt,desc (default) or createdAt,asc. "
+                    + "createdAt,DESC and a bare createdAt are 400. "
                     + "createdAt,desc ties break on id DESC; createdAt,asc ties break on id ASC. "
-                    + "A negative page, a size outside 1..100, a non-integer page or size, "
-                    + "and any other sort are HTTP 400 application/problem+json and are not clamped. "
-                    + "Omitting page, size, and sort stays compatible with existing clients. "
-                    + "The body adds sort and keeps items, page, size, totalElements, and totalPages. "
-                    + "A page past the end is HTTP 200 with an empty items array."
+                    + "Breaking change: a negative page, a size outside 1..100, a non-integer page or size, "
+                    + "an offset above 10000, and any other sort are HTTP 400 and are not clamped. "
+                    + "Omitting page, size, and sort stays compatible. "
+                    + "Order is stable for a static dataset. A concurrent insert or delete can shift later "
+                    + "offset pages (duplicates or gaps) and can make totalElements disagree with items, "
+                    + "because the page query and the count are two reads. "
+                    + "The body keeps items, page, size, totalElements, and totalPages, and adds sort. "
+                    + "A page past the end, still within the offset cap, is HTTP 200 with an empty items array."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Page of payments owned by the caller"),
             @ApiResponse(
                     responseCode = "400",
                     description = "Invalid page, size, or sort",
-                    content = @Content(mediaType = "application/problem+json")
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class),
+                            examples = @ExampleObject(
+                                    name = "offset-too-large",
+                                    value = "{\"type\":\"urn:problem-type:400\",\"title\":\"Validation Error\",\"status\":400,\"detail\":\"page is too large; page * size must be <= 10000\"}"
+                            )
+                    )
             )
     })
     public ResponseEntity<PageResponse<PaymentResponse>> listPayments(
             @Parameter(
-                    description = "Zero-based page index. Default 0. Negative or non-integer values are rejected with 400.",
-                    schema = @Schema(type = "integer", minimum = "0", defaultValue = "0")
+                    description = "Zero-based page index. Default 0. Must be >= 0, and page * size must be <= 10000. Larger offsets are 400, including values whose product exceeds Integer.MAX_VALUE.",
+                    schema = @Schema(type = "integer", minimum = "0", maximum = "10000", defaultValue = "0")
             )
             @RequestParam(defaultValue = "0") int page,
             @Parameter(
@@ -207,7 +229,7 @@ public class PaymentController {
             )
             @RequestParam(defaultValue = "20") int size,
             @Parameter(
-                    description = "Allowlist: createdAt,desc (default) or createdAt,asc. Any other value is 400.",
+                    description = "Case-sensitive allowlist: createdAt,desc (default) or createdAt,asc. createdAt,DESC is 400.",
                     schema = @Schema(allowableValues = {"createdAt,desc", "createdAt,asc"}, defaultValue = "createdAt,desc")
             )
             @RequestParam(required = false) String sort,

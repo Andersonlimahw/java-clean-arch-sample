@@ -1,49 +1,72 @@
 #!/usr/bin/env bash
-# Register a local user and insert payments for that user so GET /api/v1/payments has pages to walk.
+# Register one user through the API, then insert list-test rows with psql inside
+# the Compose Postgres container. The HTTP create path is skipped on purpose:
+# this seeds a read-only list. Host psql and host python are not required.
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
 ROWS="${ROWS:-10000}"
-PGHOST="${PGHOST:-127.0.0.1}"
-PGPORT="${PGPORT:-5432}"
-PGUSER="${PGUSER:-postgres}"
-PGDATABASE="${PGDATABASE:-payments}"
-PGPASSWORD="${PGPASSWORD:-postgres}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/payments-k6-token}"
-export PGPASSWORD
-
+OTHER_ROWS="${OTHER_ROWS:-20000}"
+ENV_FILE="${ENV_FILE:-/tmp/payments-k6.env}"
 EMAIL="k6-$(date +%s)@example.com"
-PASSWORD="Password123!"
+PASSWORD="${PAYMENTS_PASSWORD:-Password123!}"
 
 curl -fsS -X POST "$BASE_URL/api/v1/auth/register" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\",\"displayName\":\"K6 User\"}" \
   >/dev/null
 
-TOKEN="$(curl -fsS -X POST "$BASE_URL/api/v1/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])')"
+USER_ID="$(docker compose exec -T postgres psql -U postgres -d payments -tAc \
+  "SELECT id FROM users WHERE email = '${EMAIL}'" | tr -d '[:space:]')"
+if [[ -z "$USER_ID" ]]; then
+  echo "registered user was not found in payments.users" >&2
+  exit 1
+fi
 
-USER_ID="$(python3 -c 'import base64,json,sys; p=sys.argv[1].split(".")[1]; p += "=" * ((4 - len(p) % 4) % 4); print(json.loads(base64.urlsafe_b64decode(p))["sub"])' "$TOKEN")"
-
-psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 \
-  -v user_id="$USER_ID" -v rows="$ROWS" <<'SQL'
+docker compose exec -T postgres psql -U postgres -d payments -v ON_ERROR_STOP=1 \
+  -v user_id="$USER_ID" -v rows="$ROWS" -v other_rows="$OTHER_ROWS" <<'SQL'
 INSERT INTO payments (id, user_id, amount, currency, description, status, created_at, updated_at, version)
 SELECT
     gen_random_uuid(),
     :'user_id'::uuid,
-    10.00,
+    10.00 + (g % 50),
     'BRL',
     'k6 seed',
-    'PENDING',
+    CASE WHEN g % 5 = 0 THEN 'COMPLETED' WHEN g % 5 = 1 THEN 'CANCELLED' ELSE 'PENDING' END,
     TIMESTAMPTZ '2024-01-01 00:00:00+00' + ((g / 2) * INTERVAL '1 second'),
     TIMESTAMPTZ '2024-01-01 00:00:00+00' + ((g / 2) * INTERVAL '1 second'),
     0
 FROM generate_series(1, :rows) AS g;
+
+INSERT INTO payments (id, user_id, amount, currency, description, status, created_at, updated_at, version)
+SELECT
+    gen_random_uuid(),
+    (
+        substr(md5((g % 4000)::text), 1, 8) || '-' ||
+        substr(md5((g % 4000)::text), 9, 4) || '-' ||
+        substr(md5((g % 4000)::text), 13, 4) || '-' ||
+        substr(md5((g % 4000)::text), 17, 4) || '-' ||
+        substr(md5((g % 4000)::text), 21, 12)
+    )::uuid,
+    5.00 + (g % 20),
+    'USD',
+    'k6 background',
+    'PENDING',
+    TIMESTAMPTZ '2020-01-01 00:00:00+00' + ((g * 17 % 200000) * INTERVAL '1 minute'),
+    TIMESTAMPTZ '2020-01-01 00:00:00+00' + ((g * 17 % 200000) * INTERVAL '1 minute'),
+    0
+FROM generate_series(1, :other_rows) AS g;
+
+ANALYZE payments;
 SQL
 
 umask 077
-printf '%s\n' "$TOKEN" > "$TOKEN_FILE"
-echo "seeded ${ROWS} payments for ${USER_ID}"
-echo "token written to ${TOKEN_FILE}"
+cat > "$ENV_FILE" <<EOF
+PAYMENTS_EMAIL=${EMAIL}
+PAYMENTS_PASSWORD=${PASSWORD}
+EOF
+echo "seeded ${ROWS} payments for ${USER_ID} and ${OTHER_ROWS} rows for other users"
+echo "credentials written to ${ENV_FILE} (k6 logs in during setup; access tokens last 15 minutes)"

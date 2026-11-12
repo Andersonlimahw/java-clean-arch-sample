@@ -28,7 +28,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 | `POST /api/v1/auth/**` | Public | — |
 | `POST /api/v1/payments` | `USER` or `ADMIN` | The caller owns the payment that is created |
 | `GET /api/v1/payments/{id}` | `USER` or `ADMIN` | Owner, or any payment when the caller is `ADMIN`. Another user's payment is **404** |
-| `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN` |
+| `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN`. `page`/`size`/`sort` outside the documented bounds are **400** (they used to be clamped) |
 | `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
 | `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
 | `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
