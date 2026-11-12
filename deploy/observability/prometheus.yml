@@ -6,6 +6,9 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
+  # Compose service DNS. The app container publishes 127.0.0.1:8080, which Prometheus
+  # cannot open via host.docker.internal. For `mvn spring-boot:run`, point this file at
+  # prometheus-host.yml (see docs/observability.md). One target stays the scrape.
   - job_name: payments-platform
     metrics_path: /actuator/prometheus
     static_configs:
