@@ -1,0 +1,30 @@
+# Activated by PaymentsApplication when APP_MIGRATION_ONLY=true.
+# The process applies Flyway and exits. It does not serve HTTP or consume messages.
+# PaymentsApplication also pins these values above environment variables, because the
+# Kubernetes ConfigMap sets SPRING_FLYWAY_ENABLED=false for application pods.
+spring:
+  main:
+    web-application-type: none
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+  flyway:
+    enabled: true
+  # Moments turns on @EnableScheduling by default, which would still run
+  # OutboxRelayService after app.outbox.scheduling.enabled=false.
+  modulith:
+    moments:
+      enabled: false
+
+app:
+  outbox:
+    scheduling:
+      enabled: false
+
+management:
+  health:
+    rabbit:
+      enabled: false
+    redis:
+      enabled: false
