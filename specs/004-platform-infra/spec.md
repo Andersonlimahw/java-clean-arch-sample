@@ -54,7 +54,7 @@ application config changes.
 | `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | RabbitMQ |
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE` | RS256 signing (PEM) |
 | `SPRING_FLYWAY_ENABLED` | `true` = migrate on startup (compose/PaaS), `false` in k8s Deployment |
-| `APP_MIGRATION_ONLY` (`app.migration-only`) | `true` = run Flyway then exit (k8s Job) — **to be wired by PR1/PR8** |
+| `APP_MIGRATION_ONLY` (`app.migration-only`) | `true` = run Flyway, do not serve HTTP or consume messages, then exit. Exit `0` only when Flyway has applied the schema and nothing is pending; startup or migration failure exits non-zero. Command line overrides the environment variable. |
 
 Probes: `/actuator/health/liveness`, `/actuator/health/readiness`; metrics `/actuator/prometheus`.
 
