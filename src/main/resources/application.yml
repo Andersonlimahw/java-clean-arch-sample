@@ -7,6 +7,8 @@ spring:
   task:
     scheduling:
       pool:
+        # Applied only when virtual threads are off (ThreadPoolTaskScheduler).
+        # With spring.threads.virtual.enabled, Boot registers SimpleAsyncTaskScheduler.
         size: 2
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/payments}
@@ -54,6 +56,9 @@ spring:
 server:
   port: ${PORT:8080}
   shutdown: graceful
+  # Tomcat RemoteIpValve. X-Forwarded-For changes the remote address only when the
+  # immediate peer matches server.tomcat.remoteip.internal-proxies (private ranges).
+  forward-headers-strategy: native
 
 management:
   endpoints:

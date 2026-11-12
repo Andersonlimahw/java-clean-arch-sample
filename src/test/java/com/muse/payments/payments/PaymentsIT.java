@@ -3,9 +3,6 @@ package com.muse.payments.payments;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.TestcontainersBase;
-import com.muse.payments.identity.application.AuthTokensResponse;
-import com.muse.payments.identity.application.LoginRequest;
-import com.muse.payments.identity.application.RegisterRequest;
 import com.muse.payments.payments.application.CreatePaymentRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,21 +38,7 @@ class PaymentsIT extends TestcontainersBase {
     private JdbcTemplate jdbcTemplate;
 
     private String authenticateUser(String email, String password) throws Exception {
-        RegisterRequest register = new RegisterRequest(email, password, "Test User");
-        mockMvc.perform(post("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(register)))
-                .andExpect(status().isCreated());
-
-        LoginRequest login = new LoginRequest(email, password);
-        MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(login)))
-                .andExpect(status().isOk())
-                .andReturn();
-
-        AuthTokensResponse tokens = objectMapper.readValue(result.getResponse().getContentAsString(), AuthTokensResponse.class);
-        return tokens.accessToken();
+        return PaymentHttp.registerAndLogin(mockMvc, objectMapper, email, password);
     }
 
     @Test
