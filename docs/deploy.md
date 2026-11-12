@@ -90,6 +90,37 @@ gcloud run services replace deploy/cloudrun/service.yaml --region REGION
 
 Cloud Run is the alternative, not the default, because a continuous consumer wants a process that is actually running.
 
+## Forwarded client IP on Railway, Render, and Cloud Run
+
+`server.forward-headers-strategy=native` installs Tomcat's `RemoteIpValve`. Auth rate limiting uses `request.getRemoteAddr()` after that valve. It does not read `X-Forwarded-For` itself.
+
+The valve changes the remote address only when the immediate peer matches `server.tomcat.remoteip.internal-proxies`. In Spring Boot 3.5.16 the default is a regex for private and loopback ranges: `10/8`, `172.16/12`, `192.168/16`, `127/8`, link-local `169.254/16`, carrier-grade NAT `100.64/10`, and the IPv6 loopback and unique-local prefixes. A peer outside that regex is not trusted. The valve then leaves the remote address as the proxy or load balancer, and every client shares that proxy's rate-limit bucket (`ratelimit:auth:<proxy-ip>` in Redis). Register, login, and refresh then return 429 for everyone once that one bucket exceeds 20 requests per minute.
+
+Railway, Render, and Cloud Run each put a proxy in front of the container and document `X-Forwarded-For` (and `X-Forwarded-Proto`) on the incoming request. This repo does not pin those proxies' source addresses. Their published docs do not give a stable CIDR for the hop that opens the TCP connection to the container, and that hop is what the valve compares with `internal-proxies`. Before setting the regex, confirm the current platform documentation and the peer address you actually observe (access log or a one-off log of `request.getRemoteAddr()` with the header still untrusted). Do not paste a guessed cloud range.
+
+If that peer is already inside the default private ranges, leave `internal-proxies` unset. If it is not, set the property to a regex of only those peer addresses. The value is a Java regular expression, so dots are escaped. `203.0.113.10` and `203.0.113.11` below are RFC 5737 documentation addresses, not a Railway, Render, or Cloud Run range:
+
+```yaml
+server:
+  tomcat:
+    remoteip:
+      internal-proxies: "203\\.0\\.113\\.10|203\\.0\\.113\\.11"
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+```
+
+The same keys as environment variables, which is how these three platforms inject configuration:
+
+```text
+SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=203\.0\.113\.10|203\.0\.113\.11
+SERVER_TOMCAT_REMOTEIP_REMOTE_IP_HEADER=X-Forwarded-For
+SERVER_TOMCAT_REMOTEIP_PROTOCOL_HEADER=X-Forwarded-Proto
+```
+
+`remote-ip-header` names the header that carries the client address. When `server.forward-headers-strategy=native` and this property is left empty, Boot does not override the valve, and Tomcat's own default is `X-Forwarded-For`. Set it explicitly when a platform uses a different header. `protocol-header` names the scheme (`http` or `https`). With the native strategy and the property empty, Boot sets it to `X-Forwarded-Proto`. It does not affect the rate-limit key. `server.tomcat.remoteip.trusted-proxies` is a separate regex for proxies listed inside `remote-ip-header` that should be stripped but are not internal peers. Use it only when the platform documents that extra hop; it is not a substitute for `internal-proxies`.
+
+Do not set `internal-proxies` to `.*` on a service that accepts connections from the open internet. That trusts every peer and lets a client choose the rate-limit key by sending `X-Forwarded-For`.
+
 ## Kubernetes
 
 Operator notes, the image tag, and the apply command: [deploy/k8s/README.md](../deploy/k8s/README.md).
@@ -121,7 +152,7 @@ Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image 
 | 409 on `POST /api/v1/payments` | The idempotency key is in progress, or it was reused with a different body. |
 | 409 on confirm | The payment is not `PENDING` (`urn:problem-type:409`), or two updates overlapped and lost the version check (`urn:problem-type:concurrent-modification`). Confirm does not read `Idempotency-Key`. |
 | 503 on confirm or cancel | Deadlock or serialization failure. Honor `Retry-After` and send the same request again. |
-| 429 on login | Auth rate limit. Honor `Retry-After`. |
+| 429 on login for every client at once | Auth rate limit is one shared bucket. The platform proxy is probably outside `server.tomcat.remoteip.internal-proxies`, so `X-Forwarded-For` is ignored. See [Forwarded client IP](#forwarded-client-ip-on-railway-render-and-cloud-run). |
 | `mkdir .../docker.sock: operation not supported` while tests start Ryuk (macOS Colima) | Export `TESTCONTAINERS_RYUK_DISABLED=true` for that `mvn verify`. Testcontainers 1.21.4 reads the environment variable only; a system property of that name does nothing. Maven does not set it. `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` is the path inside the Colima VM for a run that still starts Ryuk. This suite does not read it once Ryuk is off. |
 | `docker compose` is not found | Commands in this runbook use the V2 plugin (`docker compose`). The V1 binary is `docker-compose`. Same arguments and the same `docker-compose.yml`. |
 
