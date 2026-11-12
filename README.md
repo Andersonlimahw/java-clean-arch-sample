@@ -54,15 +54,15 @@ On macOS with Colima, Testcontainers can fail while starting Ryuk:
 mkdir .../docker.sock: operation not supported
 ```
 
-Ryuk mounts the Docker socket path the client is using. Colima's virtiofs mount rejects that `mkdir`. This works:
+Ryuk bind-mounts the Docker socket. Colima's virtiofs mount rejects `mkdir` on that path. This suite only starts Postgres, RabbitMQ, and Redis, so Ryuk is not required. Disable it for that run:
 
 ```bash
-TESTCONTAINERS_RYUK_DISABLED=true \
-TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-  mvn clean verify
+TESTCONTAINERS_RYUK_DISABLED=true mvn clean verify
 ```
 
-Surefire and Failsafe already pass `TESTCONTAINERS_RYUK_DISABLED=true`. Testcontainers 1.21.4 reads that environment variable. A JVM system property with the same name does not turn Ryuk off. Colima still needs `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. The same pair applies when tests are launched without Maven.
+Testcontainers 1.21.4 reads that environment variable only. A JVM system property with the same name does not turn Ryuk off. Maven does not set the variable, so Ryuk stays on for Linux and Docker Desktop and reaps containers if the JVM is killed.
+
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` is the socket path inside the Colima VM. Ryuk, and Testcontainers' own Compose runner, read it when they still start. With Ryuk disabled, `mvn verify` does not read it.
 
 ### Running locally
 Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`).
