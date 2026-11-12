@@ -21,6 +21,13 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 512Mi
   - target:
+      kind: HorizontalPodAutoscaler
+      name: payments-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+  - target:
       kind: Ingress
       name: payments-ingress
     patch: |-

@@ -30,23 +30,17 @@ mvn clean verify
 
 ### Running locally
 Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`).
-To run full local platform services with Docker Compose (app, postgres, redis, rabbitmq), see the infrastructure stack delivered in [PR #2 (Platform Infra)](https://github.com/Andersonlimahw/java-clean-arch-sample/pull/2):
-```bash
-docker compose up -d postgres redis rabbitmq
-mvn spring-boot:run
-```
-
-API documentation available at `http://localhost:8080/swagger-ui.html`.
-
-Pass `REDIS_PASSWORD` when Compose Redis is started with the password from `.env.example`:
+Start PostgreSQL, Redis, and RabbitMQ, then the application, from the repository root as described in [docs/deploy.md](docs/deploy.md). That runbook sources `.env.example` so `DB_PASSWORD` and `REDIS_PASSWORD` match Compose. `mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
 
 ```bash
-REDIS_PASSWORD=redis_secret DB_PASSWORD=postgres mvn spring-boot:run
 ./scripts/validate-api.sh
 ```
+
+The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The same statuses are in `src/test/postman/payments-v1.postman_collection.json`.
 
 ## Deploy
 
 Runbooks for Railway (preferred), Render, and Cloud Run, plus rollback and troubleshooting: [docs/deploy.md](docs/deploy.md).
-Kubernetes layout: [deploy/k8s/README.md](deploy/k8s/README.md).
+Kubernetes layout and apply order: [deploy/k8s/README.md](deploy/k8s/README.md) and `scripts/k8s-apply.sh`.
+HTTP smoke test: `scripts/validate-api.sh`.
 Do not run this JVM on Vercel Functions. No production project is created from this repository.

@@ -2,48 +2,58 @@
 
 The artifact is the Docker image built from the repository `Dockerfile`. One process serves HTTP, relays the outbox, and consumes notification messages. PostgreSQL is the source of truth. Redis and RabbitMQ are required beside it.
 
-Do not deploy this service to Vercel Functions. The relay and the RabbitMQ listener are loops, not request handlers. The hosting trade-off is ADR 0011 in the architecture docs.
+Do not deploy this service to Vercel Functions. The relay and the RabbitMQ listener are loops, not request handlers.
 
 Nothing in this repository creates a Railway, Render, or Google Cloud project. Running those commands spends money and needs a separate decision.
 
 ## Environment
 
-Copy `.env.example`. Never commit filled-in secrets.
+Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env` is gitignored; `deploy/k8s/secrets.env.example` is the Kubernetes key list.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `PORT` | no | Defaults to 8080. Railway and Render inject `PORT`. |
-| `SPRING_PROFILES_ACTIVE` | yes in prod | `prod` turns on ECS JSON logs once that profile file is present. Local compose uses `local`. |
+| `PORT` | no | Defaults to 8080. Railway, Render, and Cloud Run inject `PORT`. |
+| `SPRING_PROFILES_ACTIVE` | yes in prod | `local`, `test`, and `default` may use an ephemeral JWT key. Any other profile, including `prod`, refuses to start when a PEM is empty. Compose and `.env.example` use `local`. The image default in the `Dockerfile` is `prod`. This profile does not change the log format. |
 | `DB_URL` | yes | `jdbc:postgresql://HOST:5432/payments` |
 | `DB_USER` / `DB_PASSWORD` | yes | Database credentials. |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | yes | Cache and auth rate limit. The app still serves reads if Redis is down. |
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` / `RABBITMQ_USER` / `RABBITMQ_PASSWORD` / `RABBITMQ_VHOST` | yes | Outbox relay and notification consumer. |
-| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | yes outside local/test | PEM. PKCS8 private key and X.509 public key. Generate with `scripts/generate-jwt-keys.sh`. |
-| `JWT_ISSUER` / `JWT_AUDIENCE` | yes | Must match token checks. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | Set only when a collector exists. |
-| `SPRING_FLYWAY_ENABLED` | prod | `false` on the API Deployment. `true` on the migration Job. |
+| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | yes outside local/test | PEM. PKCS#8 private key and X.509 public key. Generate with `scripts/generate-jwt-keys.sh`. Paste single-line values with `\n` escapes. |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | yes | Must match token checks. Defaults are in `application.yml`. |
+| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | no | Full OTLP HTTP traces URL, for example `http://collector:4318/v1/traces`. Spring Boot creates the exporter only when this is set. |
+| `APP_MIGRATION_ONLY` | k8s Job | `true` runs Flyway, does not serve HTTP or consume messages, then exits. |
+| `SPRING_FLYWAY_ENABLED` | k8s only | Leave unset on Railway, Render, and Cloud Run so startup migrations stay on (`application.yml` defaults `enabled: true`). The Kubernetes API ConfigMap sets `false`. The migration Job sets `true`. |
 
 `prod` without JWT PEMs refuses to start. That is intentional.
 
+Plugin URLs are not bound. `DATABASE_URL`, `REDIS_URL`, and `CLOUDAMQP_URL` do nothing until you copy the host, port, user, and password into the variables above. `DB_URL` must be a JDBC URL.
+
 ## Local
 
+From the repository root. Passwords and hosts come from `.env.example`, which matches the Compose defaults.
+
 ```bash
+set -a
+source .env.example
+set +a
 docker compose up -d postgres redis rabbitmq
-export DB_PASSWORD=postgres REDIS_PASSWORD=redis_secret
 mvn spring-boot:run
 ```
 
-Smoke, from another shell, after readiness is up:
+`mvn spring-boot:run` stays in the foreground. Smoke from another shell. The script polls `/actuator/health/readiness` for `READY_TIMEOUT_SECONDS` (default 90) before the API calls.
 
 ```bash
 ./scripts/validate-api.sh
 ```
 
-Full container stack, including the app image:
+Full container stack, including the app image. `--wait` blocks until each service healthcheck passes, including readiness on the app container:
 
 ```bash
+set -a
+source .env.example
+set +a
 docker compose config
-docker compose up -d --build
+docker compose up -d --build --wait
 ./scripts/validate-api.sh
 ```
 
@@ -53,54 +63,67 @@ docker compose up -d --build
 
 1. Create a project only when you intend to pay for it.
 2. Add PostgreSQL, Redis, and RabbitMQ (Railway plugins or reachable managed services).
-3. Set the variables above. Paste PEM keys as single-line values with `\n` escapes, which the parser accepts.
-4. Deploy the Docker service. Confirm readiness before sending traffic.
-5. Run `BASE_URL=https://<your-host> ./scripts/validate-api.sh`.
+3. Set the variables in the table. Build `DB_URL` as `jdbc:postgresql://HOST:PORT/DATABASE` from the Postgres plugin host, port, and database name. Set `REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD` from the Redis plugin. Set `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, and `RABBITMQ_VHOST` from the broker. Do not set `SPRING_FLYWAY_ENABLED=false` here; there is no separate migration Job, and Flyway runs in this process.
+4. Leave `SPRING_PROFILES_ACTIVE=prod` (the image default) and set both JWT PEMs.
+5. Deploy the Docker service. Confirm readiness before sending traffic.
+6. Run `BASE_URL=https://<your-host> ./scripts/validate-api.sh`.
 
-Cost note: a always-on web service plus three data services is the bill. There is no free production path that keeps RabbitMQ connected.
+Cost note: an always-on web service plus three data services is the bill. There is no free production path that keeps RabbitMQ connected.
 
 ## Render
 
-`render.yaml` describes a Docker web service on the standard plan and marks data and JWT variables as `sync: false` so they are entered in the dashboard, not in git.
+`render.yaml` is a Docker web service on the standard plan. Health check path: `/actuator/health/readiness`.
+
+Secrets are `sync: false` and are entered in the dashboard: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`. `JWT_ISSUER`, `JWT_AUDIENCE`, and `RABBITMQ_VHOST` are committed non-secret defaults in `render.yaml`. Leave `SPRING_FLYWAY_ENABLED` unset so this process migrates on startup.
 
 Render does not provide RabbitMQ. Point `RABBITMQ_HOST` at CloudAMQP or another broker. Use Render Postgres or another managed Postgres. Redis is a Render key-value instance or another provider.
 
-Health check path: `/actuator/health/readiness`.
-
 ## Google Cloud Run
 
-`deploy/cloudrun/service.yaml` is a Knative Service with `minScale: 1` and CPU throttling off so the relay keeps polling. Scale-to-zero would stall outbox publishing.
+`deploy/cloudrun/service.yaml` is a Knative Service with `minScale: 1`, CPU throttling off, and a VPC connector annotation so the relay keeps polling and can reach private data stores. Scale-to-zero would stall outbox publishing. `SPRING_PROFILES_ACTIVE=prod`. `JWT_ISSUER` and `JWT_AUDIENCE` are the same defaults as `application.yml`. Each other variable is a Secret Manager secret, version `latest`: `payments-db-url`, `payments-db-user`, `payments-db-password`, `payments-redis-host`, `payments-redis-port`, `payments-redis-password`, `payments-rabbitmq-host`, `payments-rabbitmq-port`, `payments-rabbitmq-user`, `payments-rabbitmq-password`, `payments-rabbitmq-vhost`, `payments-jwt-private-key`, `payments-jwt-public-key`. Cloud Run `secretKeyRef.key` is the version, not a Kubernetes secret key. Flyway stays at the application default. The runtime service account needs `roles/secretmanager.secretAccessor` on those secrets.
 
-Replace `gcr.io/PROJECT_ID/payments-platform:latest`, set env from Secret Manager, and put the service on a VPC connector that can reach PostgreSQL, Redis, and RabbitMQ. Cloud Run is the alternative, not the default, because a continuous consumer wants a process that is actually running.
+Replace `gcr.io/PROJECT_ID/payments-platform:latest` and `PROJECT_CONNECTOR`, create the secrets, then replace the service only when you intend to pay:
+
+```bash
+gcloud run services replace deploy/cloudrun/service.yaml --region REGION
+```
+
+Cloud Run is the alternative, not the default, because a continuous consumer wants a process that is actually running.
 
 ## Kubernetes
 
-Operator notes: [deploy/k8s/README.md](../deploy/k8s/README.md).
+Operator notes, the image tag, and the apply command: [deploy/k8s/README.md](../deploy/k8s/README.md).
+
+Validate the same way `scripts/ci-local.sh` does:
 
 ```bash
 kustomize build deploy/k8s/overlays/staging | kubeconform -strict -kubernetes-version 1.30.0 -summary
 kustomize build deploy/k8s/overlays/production | kubeconform -strict -kubernetes-version 1.30.0 -summary
 ```
 
-Apply order: namespace and ConfigMap, Secret (from `secret.example.yaml`, not from git), migration Job, then the Deployment. The API ConfigMap sets `SPRING_FLYWAY_ENABLED=false`. The Job sets it `true`.
+Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image is loaded. The script creates the namespace and ConfigMap, applies the Secret, waits until the migration Job completes, then applies the Deployment. See the Kubernetes README for the exact command. The API ConfigMap sets `SPRING_FLYWAY_ENABLED=false`. The Job sets `APP_MIGRATION_ONLY=true`, which forces Flyway on and exits when migrations finish.
 
 ## Rollback
 
 - Railway / Render: redeploy the previous image tag or the previous successful deploy in the dashboard. Flyway migrations are append-only; a rollback does not drop columns. If a migration already ran, the previous image must still tolerate that schema.
-- Kubernetes: `kubectl rollout undo deployment/payments-deployment -n <namespace>`. Do not delete the migration Job's applied versions.
-- If a bad event storms the DLQ, scale the consumer only after the poison message is understood. Republishing the outbox without checking `processed_events` is safe because the consumer dedupes on `event_id`.
+- Kubernetes: `kubectl rollout undo deployment/payments-deployment -n <namespace>`. Staging is `payments-staging`; production is `payments-production`. That rolls back HTTP, the outbox relay, and the notification consumer together. Do not delete Flyway versions that already applied.
+- A poison message is handled on that same Deployment. Inspect the DLQ before scaling it. Republishing an outbox row is safe when `processed_events` already stores that `(consumer, event_id)`; the consumer inserts with `ON CONFLICT DO NOTHING`.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| Readiness never goes green | Database URL, security group, and Flyway. `/actuator/health/readiness` includes the DB. |
-| `Production environment must define JWT_PRIVATE_KEY` | Profile is not `local`/`test`/`default` and the PEMs are empty. |
-| Payments succeed, notifications stay empty | RabbitMQ credentials, exchange `payments.events`, unpublished rows in `outbox_events`. |
+| Readiness never goes green | Database URL, security group, and Flyway. `/actuator/health/readiness` includes the DB. Liveness does not, so a database blip does not restart the pod. |
+| `Production environment must define JWT_PRIVATE_KEY` | Profile is not `local`/`test`/`default` and a PEM is empty. |
+| `Failed to parse configured RSA JWT keys` | PEMs are non-empty but not PKCS#8 and X.509. `CHANGE_ME` and truncated placeholders hit this. Generate keys with `scripts/generate-jwt-keys.sh`. |
+| Payments succeed, notifications stay empty | RabbitMQ credentials, exchange `payments.events`, unpublished rows in `outbox_events`. The relay polls about once a second. |
 | 401 on every call | `JWT_ISSUER` / `JWT_AUDIENCE` differ from the token, or the public key does not match the private key. |
-| 409 on confirm | Another request already moved the payment, or the idempotency key was reused with a different body. |
+| 409 on `POST /api/v1/payments` | The idempotency key is in progress, or it was reused with a different body. |
+| 409 on confirm | The payment is not `PENDING`. Confirm does not read `Idempotency-Key`. |
 | 429 on login | Auth rate limit. Honor `Retry-After`. |
 
 ## Smoke test
 
-`scripts/validate-api.sh` registers a unique user, logs in, rejects a missing token and a missing idempotency key, creates and confirms a payment, and reads notifications. It prints each status code. Set `BASE_URL` when the process is not on `http://127.0.0.1:8080`.
+`scripts/validate-api.sh` registers a unique user, logs in, rejects a missing token and a missing idempotency key, creates and confirms a payment, fetches that payment, rejects an unknown id, and polls notifications until the payment id is present or `NOTIFY_TIMEOUT_SECONDS` (default 10) elapses. It prints each status code. Set `BASE_URL` when the process is not on `http://127.0.0.1:8080`.
+
+The Postman collection at `src/test/postman/payments-v1.postman_collection.json` asserts the same status codes and generates a new email before register. It does not poll until the notification row exists; the shell script does.
