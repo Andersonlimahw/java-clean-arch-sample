@@ -3,43 +3,41 @@ package com.muse.payments.payments;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.TestcontainersBase;
-import com.muse.payments.identity.application.AuthTokensResponse;
-import com.muse.payments.identity.application.LoginRequest;
-import com.muse.payments.identity.application.RegisterRequest;
 import com.muse.payments.payments.application.CreatePaymentRequest;
 import com.muse.payments.payments.domain.Payment;
 import com.muse.payments.payments.domain.PaymentRepository;
-import com.muse.payments.payments.infrastructure.PaymentJpaAdapter;
-import com.muse.payments.payments.infrastructure.PaymentJpaRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -57,54 +55,167 @@ class PaymentOptimisticLockRaceIT extends TestcontainersBase {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private UpdateGate updateGate;
+    private StringRedisTemplate redisTemplate;
+
+    @MockitoSpyBean
+    private PaymentRepository paymentRepository;
+
+    private final AtomicInteger arrived = new AtomicInteger();
+    private final AtomicReference<CyclicBarrier> barrier = new AtomicReference<>();
+
+    @BeforeEach
+    void clearSharedAuthRateLimit() {
+        Set<String> keys = redisTemplate.keys("ratelimit:auth:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+    }
+
+    @Test
+    @DisplayName("payments.version is a non-null bigint defaulting to 0")
+    void paymentsVersionColumnExists() {
+        Map<String, Object> column = jdbcTemplate.queryForMap(
+                "SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+                        + "WHERE table_schema = 'public' AND table_name = 'payments' AND column_name = 'version'"
+        );
+        assertThat(column.get("data_type")).isEqualTo("bigint");
+        assertThat(column.get("is_nullable")).isEqualTo("NO");
+        assertThat(String.valueOf(column.get("column_default"))).contains("0");
+    }
 
     @Test
     @DisplayName("Two confirms of the same version: one succeeds and the other is 409 problem+json")
     void concurrentConfirmFromTheSameVersionConflicts() throws Exception {
-        String email = "race-" + UUID.randomUUID() + "@example.com";
-        String token = authenticateUser(email, "SecurePassword123!");
+        String token = token();
         UUID paymentId = createPayment(token);
+        arm(paymentId);
 
+        List<MvcResult> results = race(
+                () -> postUpdate(token, paymentId, "/confirm"),
+                () -> postUpdate(token, paymentId, "/confirm")
+        );
+        MvcResult winner = winner(results);
+        MvcResult loser = loser(results);
+
+        assertThat(arrived.get()).isEqualTo(2);
+        JsonNode winnerBody = objectMapper.readTree(winner.getResponse().getContentAsString());
+        assertThat(winnerBody.get("status").asText()).isEqualTo("COMPLETED");
+        assertThat(winnerBody.get("version").asLong()).isEqualTo(1L);
+        assertConcurrentModificationProblem(loser);
+        assertPersistedOnce(paymentId, "COMPLETED", "PaymentCompleted");
+    }
+
+    @Test
+    @DisplayName("Confirm and cancel of the same version: one wins and the other is 409")
+    void concurrentConfirmAndCancelFromTheSameVersionConflicts() throws Exception {
+        String token = token();
+        UUID paymentId = createPayment(token);
+        arm(paymentId);
+
+        List<MvcResult> results = race(
+                () -> postUpdate(token, paymentId, "/confirm"),
+                () -> postUpdate(token, paymentId, "/cancel")
+        );
+        MvcResult winner = winner(results);
+        MvcResult loser = loser(results);
+
+        assertThat(arrived.get()).isEqualTo(2);
+        JsonNode winnerBody = objectMapper.readTree(winner.getResponse().getContentAsString());
+        String status = winnerBody.get("status").asText();
+        assertThat(status).isIn("COMPLETED", "CANCELLED");
+        assertThat(winnerBody.get("version").asLong()).isEqualTo(1L);
+        assertConcurrentModificationProblem(loser);
+        String eventType = "COMPLETED".equals(status) ? "PaymentCompleted" : "PaymentCancelled";
+        assertPersistedOnce(paymentId, status, eventType);
+    }
+
+    private String token() throws Exception {
+        return PaymentHttp.registerAndLogin(
+                mockMvc,
+                objectMapper,
+                "race-" + UUID.randomUUID() + "@example.com",
+                "SecurePassword123!"
+        );
+    }
+
+    private UUID createPayment(String token) throws Exception {
+        return PaymentHttp.createdPaymentUuid(
+                mockMvc,
+                objectMapper,
+                token,
+                new CreatePaymentRequest(new BigDecimal("15.00"), "BRL", "Race")
+        );
+    }
+
+    private void arm(UUID paymentId) throws Exception {
+        arrived.set(0);
+        barrier.set(new CyclicBarrier(2));
+        doAnswer(invocation -> {
+            Payment payment = invocation.getArgument(0);
+            if (payment.getVersion() != null && paymentId.equals(payment.getId())) {
+                arrived.incrementAndGet();
+                try {
+                    barrier.get().await(HANG_GUARD_SECONDS, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while waiting for the concurrent payment update", exception);
+                } catch (BrokenBarrierException | TimeoutException exception) {
+                    throw new IllegalStateException("Concurrent payment update did not reach the same version", exception);
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(paymentRepository).save(any());
+    }
+
+    private List<MvcResult> race(Callable<MvcResult> left, Callable<MvcResult> right) throws Exception {
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
-            Future<MvcResult> left = pool.submit(() -> confirm(token, paymentId));
-            Future<MvcResult> right = pool.submit(() -> confirm(token, paymentId));
-            MvcResult first = left.get(HANG_GUARD_SECONDS * 2, TimeUnit.SECONDS);
-            MvcResult second = right.get(HANG_GUARD_SECONDS * 2, TimeUnit.SECONDS);
-
-            List<MvcResult> results = List.of(first, second);
-            List<MvcResult> winners = results.stream()
-                    .filter(result -> result.getResponse().getStatus() >= 200 && result.getResponse().getStatus() < 300)
-                    .toList();
-            List<MvcResult> losers = results.stream()
-                    .filter(result -> result.getResponse().getStatus() == 409)
-                    .toList();
-
-            assertThat(updateGate.arrived.get())
-                    .as("both updates must reach the gate while still on the original version")
-                    .isEqualTo(2);
-            assertThat(winners).hasSize(1);
-            assertThat(losers).hasSize(1);
-
-            JsonNode winnerBody = objectMapper.readTree(winners.get(0).getResponse().getContentAsString());
-            assertThat(winnerBody.get("status").asText()).isEqualTo("COMPLETED");
-            assertThat(winnerBody.get("version").asLong()).isEqualTo(1L);
-
-            MvcResult loser = losers.get(0);
-            MediaType loserType = MediaType.parseMediaType(loser.getResponse().getContentType());
-            assertThat(loserType.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)).isTrue();
-            JsonNode problem = objectMapper.readTree(loser.getResponse().getContentAsString());
-            assertThat(problem.get("status").asInt()).isEqualTo(409);
-            assertThat(problem.get("title").asText()).isEqualTo("Concurrent Modification");
-            assertThat(problem.get("detail").asText())
-                    .isEqualTo("The resource was modified concurrently. Please retry.");
-            assertThat(problem.get("type").asText()).isEqualTo("urn:problem-type:409");
-            assertThat(problem.get("instance").asText()).isEqualTo("/api/v1/payments/" + paymentId + "/confirm");
-            assertThat(problem.has("stackTrace")).isFalse();
-            assertThat(loser.getResponse().getContentAsString()).doesNotContain("StaleObjectStateException");
+            var first = pool.submit(left);
+            var second = pool.submit(right);
+            return List.of(
+                    first.get(HANG_GUARD_SECONDS * 2, TimeUnit.SECONDS),
+                    second.get(HANG_GUARD_SECONDS * 2, TimeUnit.SECONDS)
+            );
         }
+    }
 
-        String status = jdbcTemplate.queryForObject(
+    private MvcResult postUpdate(String token, UUID paymentId, String action) throws Exception {
+        return mockMvc.perform(post("/api/v1/payments/" + paymentId + action)
+                        .header("Authorization", "Bearer " + token)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andReturn();
+    }
+
+    private static MvcResult winner(List<MvcResult> results) {
+        List<MvcResult> winners = results.stream()
+                .filter(result -> result.getResponse().getStatus() >= 200 && result.getResponse().getStatus() < 300)
+                .toList();
+        assertThat(winners).hasSize(1);
+        return winners.get(0);
+    }
+
+    private static MvcResult loser(List<MvcResult> results) {
+        List<MvcResult> losers = results.stream()
+                .filter(result -> result.getResponse().getStatus() == 409)
+                .toList();
+        assertThat(losers).hasSize(1);
+        return losers.get(0);
+    }
+
+    private void assertConcurrentModificationProblem(MvcResult loser) throws Exception {
+        MediaType contentType = MediaType.parseMediaType(loser.getResponse().getContentType());
+        assertThat(contentType.isCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)).isTrue();
+        JsonNode problem = objectMapper.readTree(loser.getResponse().getContentAsString());
+        assertThat(problem.get("status").asInt()).isEqualTo(409);
+        assertThat(problem.get("title").asText()).isEqualTo("Concurrent Modification");
+        assertThat(problem.get("detail").asText()).isEqualTo("The resource was modified concurrently. Please retry.");
+        assertThat(problem.get("type").asText()).isEqualTo("urn:problem-type:concurrent-modification");
+        assertThat(problem.get("instance").asText()).isEqualTo(loser.getRequest().getRequestURI());
+        assertThat(problem.has("trace")).isFalse();
+        assertThat(problem.has("exception")).isFalse();
+    }
+
+    private void assertPersistedOnce(UUID paymentId, String status, String eventType) {
+        String storedStatus = jdbcTemplate.queryForObject(
                 "SELECT status FROM payments WHERE id = ?",
                 String.class,
                 paymentId
@@ -114,117 +225,21 @@ class PaymentOptimisticLockRaceIT extends TestcontainersBase {
                 Long.class,
                 paymentId
         );
-        Integer completedEvents = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = ? AND event_type = 'PaymentCompleted'",
+        Integer winningEvents = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = ? AND event_type = ?",
                 Integer.class,
-                paymentId
+                paymentId,
+                eventType
         );
-        assertThat(status).isEqualTo("COMPLETED");
+        Integer otherTransitionEvents = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = ? AND event_type <> ? AND event_type <> 'PaymentCreated'",
+                Integer.class,
+                paymentId,
+                eventType
+        );
+        assertThat(storedStatus).isEqualTo(status);
         assertThat(version).isEqualTo(1L);
-        assertThat(completedEvents).isEqualTo(1);
-    }
-
-    private String authenticateUser(String email, String password) throws Exception {
-        // Auth limits are keyed by client address and the suite shares one Redis.
-        // A fresh forwarded address keeps this test off the bucket other tests already filled.
-        String clientIp = "203.0.113." + Math.floorMod(email.hashCode(), 200);
-        mockMvc.perform(post("/api/v1/auth/register")
-                        .header("X-Forwarded-For", clientIp)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RegisterRequest(email, password, "Race User"))))
-                .andExpect(status().isCreated());
-
-        MvcResult login = mockMvc.perform(post("/api/v1/auth/login")
-                        .header("X-Forwarded-For", clientIp)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new LoginRequest(email, password))))
-                .andExpect(status().isOk())
-                .andReturn();
-        return objectMapper.readValue(login.getResponse().getContentAsString(), AuthTokensResponse.class).accessToken();
-    }
-
-    private UUID createPayment(String token) throws Exception {
-        MvcResult created = mockMvc.perform(post("/api/v1/payments")
-                        .header("Authorization", "Bearer " + token)
-                        .header("Idempotency-Key", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                new CreatePaymentRequest(new BigDecimal("15.00"), "BRL", "Race"))))
-                .andExpect(status().isCreated())
-                .andReturn();
-        return UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
-    }
-
-    private MvcResult confirm(String token, UUID paymentId) throws Exception {
-        return mockMvc.perform(post("/api/v1/payments/" + paymentId + "/confirm")
-                        .header("Authorization", "Bearer " + token)
-                        .accept(MediaType.APPLICATION_JSON))
-                .andReturn();
-    }
-
-    @TestConfiguration
-    static class SameVersionGate {
-
-        @Bean
-        UpdateGate updateGate() {
-            return new UpdateGate();
-        }
-
-        @Bean
-        @Primary
-        PaymentRepository paymentRepository(PaymentJpaRepository jpaRepository, UpdateGate updateGate) {
-            return new GatedPaymentRepository(new PaymentJpaAdapter(jpaRepository), updateGate);
-        }
-    }
-
-    static final class UpdateGate {
-        final CyclicBarrier barrier = new CyclicBarrier(2);
-        final AtomicInteger arrived = new AtomicInteger();
-    }
-
-    /**
-     * Both versioned saves wait until the peer has also loaded that version.
-     * The timeout only stops a hung test; the winner is released by the peer, not by the clock.
-     */
-    static final class GatedPaymentRepository implements PaymentRepository {
-
-        private final PaymentRepository delegate;
-        private final UpdateGate gate;
-
-        GatedPaymentRepository(PaymentRepository delegate, UpdateGate gate) {
-            this.delegate = delegate;
-            this.gate = gate;
-        }
-
-        @Override
-        public Payment save(Payment payment) {
-            if (payment.getVersion() != null) {
-                gate.arrived.incrementAndGet();
-                try {
-                    gate.barrier.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS);
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("Interrupted while waiting for the concurrent payment update", exception);
-                } catch (BrokenBarrierException | TimeoutException exception) {
-                    throw new IllegalStateException("Concurrent payment update did not reach the same version", exception);
-                }
-            }
-            return delegate.save(payment);
-        }
-
-        @Override
-        public Optional<Payment> findById(UUID id) {
-            return delegate.findById(id);
-        }
-
-        @Override
-        public List<Payment> findByUserId(UUID userId, int page, int size) {
-            return delegate.findByUserId(userId, page, size);
-        }
-
-        @Override
-        public long countByUserId(UUID userId) {
-            return delegate.countByUserId(userId);
-        }
+        assertThat(winningEvents).isEqualTo(1);
+        assertThat(otherTransitionEvents).isZero();
     }
 }
