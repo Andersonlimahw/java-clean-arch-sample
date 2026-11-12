@@ -1,12 +1,12 @@
 {
   "info": {
     "name": "Payments Platform v1",
-    "description": "Ordered smoke flow for /api/v1. Run against a local process. Variables baseUrl, email, password, accessToken, paymentId are set as the collection runs.",
+    "description": "Ordered HTTP smoke for /api/v1. Register generates a unique email on each run. Status tests fail the request when the code does not match. Notification delivery is eventual; this collection asserts the list status only. scripts/validate-api.sh also waits until the payment id is present.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {"key": "baseUrl", "value": "http://127.0.0.1:8080"},
-    {"key": "email", "value": "postman-user@example.com"},
+    {"key": "email", "value": ""},
     {"key": "password", "value": "Password123!"},
     {"key": "accessToken", "value": ""},
     {"key": "paymentId", "value": ""}
@@ -14,6 +14,19 @@
   "item": [
     {
       "name": "Readiness",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "GET",
         "url": "{{baseUrl}}/actuator/health/readiness"
@@ -21,6 +34,28 @@
     },
     {
       "name": "Register",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('email', 'postman-' + Date.now() + '@example.com');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [{"key": "Content-Type", "value": "application/json"}],
@@ -39,6 +74,9 @@
           "script": {
             "type": "text/javascript",
             "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
               "const body = pm.response.json();",
               "pm.collectionVariables.set('accessToken', body.accessToken);"
             ]
@@ -56,6 +94,54 @@
       }
     },
     {
+      "name": "Missing token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(401);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/payments"
+      }
+    },
+    {
+      "name": "Missing idempotency key",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "Authorization", "value": "Bearer {{accessToken}}"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": \"15.50\",\n  \"currency\": \"BRL\",\n  \"description\": \"postman\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/payments"
+      }
+    },
+    {
       "name": "Create payment",
       "event": [
         {
@@ -63,6 +149,9 @@
           "script": {
             "type": "text/javascript",
             "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
               "const body = pm.response.json();",
               "pm.collectionVariables.set('paymentId', body.id);"
             ]
@@ -85,6 +174,19 @@
     },
     {
       "name": "Get payment",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "GET",
         "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
@@ -93,6 +195,19 @@
     },
     {
       "name": "Confirm payment",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
@@ -100,7 +215,41 @@
       }
     },
     {
+      "name": "Unknown payment",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(404);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
+        "url": "{{baseUrl}}/api/v1/payments/00000000-0000-0000-0000-000000000000"
+      }
+    },
+    {
       "name": "List notifications",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "GET",
         "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
