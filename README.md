@@ -37,3 +37,13 @@ mvn spring-boot:run
 ```
 
 API documentation available at `http://localhost:8080/swagger-ui.html`.
+
+### Kubernetes migration Job
+
+The Job in `deploy/k8s/base/flyway-job.yaml` sets `APP_MIGRATION_ONLY=true`. The process applies Flyway, does not serve HTTP, and does not start Rabbit consumers or the outbox scheduler. It exits `0` only after migrations are applied, and exits non-zero if startup or Flyway fails. Replicas inherit `SPRING_FLYWAY_ENABLED=false` from the ConfigMap and leave `APP_MIGRATION_ONLY` unset, so they do not migrate and they keep serving traffic.
+
+Local migration against Compose dependencies, without starting the HTTP server:
+
+```bash
+APP_MIGRATION_ONLY=true mvn spring-boot:run
+```

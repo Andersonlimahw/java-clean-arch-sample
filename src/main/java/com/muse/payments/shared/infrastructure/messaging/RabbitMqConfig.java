@@ -7,10 +7,12 @@ import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -63,13 +65,19 @@ public class RabbitMqConfig {
                 .with(ROUTING_KEY_PAYMENT_CREATED_DLQ);
     }
 
+    /**
+     * Replaces Boot's auto-configured factory, so listener properties such as
+     * {@code spring.rabbitmq.listener.simple.auto-startup} are applied through Boot's
+     * configurer. Without that, the migration profile cannot keep consumers stopped.
+     */
     @Bean
-    public org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer,
             ConnectionFactory connectionFactory,
             MessageConverter messageConverter
     ) {
-        org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory factory = new org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory();
-        factory.setConnectionFactory(connectionFactory);
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        configurer.configure(factory, connectionFactory);
         factory.setMessageConverter(messageConverter);
         factory.setRecoveryInterval(3000L);
         return factory;
