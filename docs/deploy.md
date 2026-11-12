@@ -121,6 +121,8 @@ Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image 
 | 409 on `POST /api/v1/payments` | The idempotency key is in progress, or it was reused with a different body. |
 | 409 on confirm | The payment is not `PENDING`. Confirm does not read `Idempotency-Key`. |
 | 429 on login | Auth rate limit. Honor `Retry-After`. |
+| `mkdir .../docker.sock: operation not supported` while tests start Ryuk (macOS Colima) | Export `TESTCONTAINERS_RYUK_DISABLED=true` and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. Surefire and Failsafe already set the Ryuk variable. Testcontainers 1.21.4 ignores a system property of that name. The socket override is the path inside the Colima VM. |
+| `docker compose` is not found | Commands in this runbook use the V2 plugin (`docker compose`). The V1 binary is `docker-compose`. Same arguments and the same `docker-compose.yml`. |
 
 ## Smoke test
 

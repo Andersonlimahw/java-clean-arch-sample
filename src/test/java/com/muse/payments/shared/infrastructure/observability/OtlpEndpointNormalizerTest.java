@@ -2,14 +2,21 @@ package com.muse.payments.shared.infrastructure.observability;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.Banner;
 import org.springframework.boot.DefaultBootstrapContext;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.io.IOException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,13 +83,58 @@ class OtlpEndpointNormalizerTest {
     }
 
     @Test
-    @DisplayName("The normalizer is registered for Spring Boot startup")
-    void processorIsRegistered() throws IOException {
-        try (var resource = getClass().getClassLoader().getResourceAsStream(
-                "META-INF/spring/org.springframework.boot.env.EnvironmentPostProcessor")) {
-            assertThat(resource).isNotNull();
-            String listed = new String(resource.readAllBytes(), StandardCharsets.UTF_8);
-            assertThat(listed).contains(OtlpEndpointNormalizer.class.getName());
+    @DisplayName("Spring Boot 3.5 loads the normalizer from META-INF/spring.factories")
+    void processorIsRegisteredInSpringFactories() throws IOException {
+        Enumeration<URL> resources = getClass().getClassLoader().getResources("META-INF/spring.factories");
+        StringBuilder listed = new StringBuilder();
+        while (resources.hasMoreElements()) {
+            try (var resource = resources.nextElement().openStream()) {
+                listed.append(new String(resource.readAllBytes(), StandardCharsets.UTF_8)).append('\n');
+            }
         }
+        assertThat(listed.toString()).contains(
+                "org.springframework.boot.env.EnvironmentPostProcessor="
+                        + OtlpEndpointNormalizer.class.getName());
+    }
+
+    @Test
+    @DisplayName("Spring Boot startup rewrites a collector base URL to the traces path")
+    void springBootStartupRewritesBaseUrl() {
+        SpringApplication application = probe();
+        try (ConfigurableApplicationContext context = application.run(
+                "--OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318")) {
+            ConfigurableEnvironment environment = context.getEnvironment();
+            assertThat(environment.getProperty(OtlpEndpointNormalizer.ENDPOINT))
+                    .isEqualTo("http://127.0.0.1:4318/v1/traces");
+            assertThat(environment.getProperty(OtlpEndpointNormalizer.EXPORT_ENABLED)).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("Spring Boot startup on prod disables export when no collector URL is set")
+    void springBootStartupProdDisablesExportWithoutUrl() {
+        SpringApplication application = probe();
+        application.setAdditionalProfiles("prod");
+        try (ConfigurableApplicationContext context = application.run()) {
+            ConfigurableEnvironment environment = context.getEnvironment();
+            assertThat(environment.getProperty("management.tracing.sampling.probability")).isEqualTo("0.1");
+            assertThat(environment.getProperty(OtlpEndpointNormalizer.EXPORT_ENABLED)).isEqualTo("false");
+            assertThat(environment.getProperty(OtlpEndpointNormalizer.ENDPOINT)).isBlank();
+        }
+    }
+
+    private static SpringApplication probe() {
+        SpringApplication application = new SpringApplication(NormalizerProbe.class);
+        application.setWebApplicationType(WebApplicationType.NONE);
+        application.setBannerMode(Banner.Mode.OFF);
+        application.setLogStartupInfo(false);
+        return application;
+    }
+
+    /**
+     * Not a {@code @SpringBootConfiguration}. Spring's test finder would otherwise
+     * boot this class instead of {@code PaymentsApplication} for tests in this package.
+     */
+    static class NormalizerProbe {
     }
 }

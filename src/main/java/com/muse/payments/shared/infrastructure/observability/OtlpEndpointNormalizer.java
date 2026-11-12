@@ -16,6 +16,8 @@ import java.util.Map;
  * Accepts either an OTEL base URL or a full traces URL, and turns export off when no URL is set.
  * {@code OTEL_EXPORTER_OTLP_ENDPOINT} is a base URL in the OTEL spec. Spring Boot posts to
  * {@code management.otlp.tracing.endpoint} exactly as given, so a base URL otherwise 404s.
+ * Spring Boot 3.5 loads this class from {@code META-INF/spring.factories}. The
+ * {@code META-INF/spring/org.springframework.boot.env.EnvironmentPostProcessor} imports file is not read.
  */
 public final class OtlpEndpointNormalizer implements EnvironmentPostProcessor, Ordered {
 

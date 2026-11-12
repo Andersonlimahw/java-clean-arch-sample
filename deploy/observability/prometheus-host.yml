@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Host JVM from `mvn spring-boot:run`. Prometheus maps host.docker.internal
+  # with extra_hosts (host-gateway) so this works on Docker Desktop, Colima, and Linux.
+  # Do not use this file together with the Compose app: that port is bound to 127.0.0.1
+  # and this target would not see it, while the default file would.
+  - job_name: payments-platform
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]

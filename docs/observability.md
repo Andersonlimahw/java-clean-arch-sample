@@ -67,4 +67,22 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml --profi
 
 Kibana: `http://127.0.0.1:5601`. Elasticsearch security is off because this port is loopback-only. The profile does not collect logs. Run the app with the `prod` profile to emit ECS JSON on stdout, and ship that stream with a collector you already operate. Do not enable the `prod` profile in tests.
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` is the collector base URL (`http://otel-collector:4318`). `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the full traces URL (`http://otel-collector:4318/v1/traces`) and wins when both are set. Profile `prod` exports nothing until one of them is set, and it samples 10% unless `TRACING_SAMPLING_PROBABILITY` is set. This repository does not provision a hosted collector.
+`OTEL_EXPORTER_OTLP_ENDPOINT` is the collector base URL (`http://otel-collector:4318`). `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the full traces URL (`http://otel-collector:4318/v1/traces`) and wins when both are set. Profile `prod` exports nothing until one of them is set, and it samples 10% unless `TRACING_SAMPLING_PROBABILITY` is set. Spring Boot 3.5 loads `OtlpEndpointNormalizer` from `META-INF/spring.factories` and appends `/v1/traces` when the value is only a base URL. This repository does not provision a hosted collector.
+
+Grafana provisions the Prometheus datasource and the **Payments platform** dashboard (HTTP latency and status, outbox pending and lag, queue depth and DLQ, cache hit and miss). The dashboard folder is `Payments`.
+
+## Scrape target
+
+`deploy/observability/prometheus.yml` scrapes `app:8080`. That name exists only when the app container is on the Compose network. The container publishes `127.0.0.1:8080`, so Prometheus cannot reach it through `host.docker.internal`.
+
+The README local flow runs the JVM on the host (`mvn spring-boot:run`) and leaves the `app` service stopped. Use the host file for that flow. It scrapes `host.docker.internal:8080`. The Prometheus service maps that name with `extra_hosts: host.docker.internal:host-gateway` (Docker Desktop, Colima, and Linux).
+
+```bash
+PROMETHEUS_CONFIG=./deploy/observability/prometheus-host.yml \
+  docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d \
+  postgres redis rabbitmq otel-collector jaeger prometheus grafana
+```
+
+Leave `PROMETHEUS_CONFIG` unset for the all-in-compose stack. The default file still scrapes `app:8080`. Run one app, not both: the two files are alternatives, so the same process is not scraped twice.
+
+Commands in this page use the Compose V2 plugin, `docker compose`. The V1 binary is `docker-compose`. Both read `docker-compose.yml`. If the plugin is missing, pass the same arguments to `docker-compose`.

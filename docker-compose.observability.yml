@@ -1,5 +1,9 @@
 # Overlay for local tracing and metrics.
 #   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+# Host JVM (`mvn spring-boot:run`) instead of the app container:
+#   PROMETHEUS_CONFIG=./deploy/observability/prometheus-host.yml \
+#     docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d \
+#     postgres redis rabbitmq otel-collector jaeger prometheus grafana
 # Elasticsearch and Kibana are behind the "logs" profile (512 MB heap).
 # That profile only starts the search UI. It does not ship stdout and does not enable ECS JSON.
 # ECS JSON is the prod profile; point a shipper you already run at that stdout.
@@ -56,8 +60,11 @@ services:
   prometheus:
     image: prom/prometheus:v2.55.1
     container_name: payments-prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Default scrapes the Compose app. Host JVM: PROMETHEUS_CONFIG=./deploy/observability/prometheus-host.yml
+      - ${PROMETHEUS_CONFIG:-./deploy/observability/prometheus.yml}:/etc/prometheus/prometheus.yml:ro
       - ./deploy/observability/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
     ports:
       - "127.0.0.1:9090:9090"

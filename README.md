@@ -48,9 +48,25 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 mvn clean verify
 ```
 
+On macOS with Colima, Testcontainers can fail while starting Ryuk:
+
+```text
+mkdir .../docker.sock: operation not supported
+```
+
+Ryuk mounts the Docker socket path the client is using. Colima's virtiofs mount rejects that `mkdir`. This works:
+
+```bash
+TESTCONTAINERS_RYUK_DISABLED=true \
+TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+  mvn clean verify
+```
+
+Surefire and Failsafe already pass `TESTCONTAINERS_RYUK_DISABLED=true`. Testcontainers 1.21.4 reads that environment variable. A JVM system property with the same name does not turn Ryuk off. Colima still needs `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. The same pair applies when tests are launched without Maven.
+
 ### Running locally
 Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`).
-Start PostgreSQL, Redis, and RabbitMQ, then the application, from the repository root as described in [docs/deploy.md](docs/deploy.md). That runbook sources `.env.example` so `DB_PASSWORD` and `REDIS_PASSWORD` match Compose. `mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
+Start PostgreSQL, Redis, and RabbitMQ, then the application, from the repository root as described in [docs/deploy.md](docs/deploy.md). That runbook uses the Compose V2 plugin (`docker compose`). The V1 binary is `docker-compose` (hyphen). Both read `docker-compose.yml`. If `docker compose` is not on `PATH`, run the same arguments with `docker-compose`. `scripts/ci-local.sh` tries the plugin first, then the binary. The runbook sources `.env.example` so `DB_PASSWORD` and `REDIS_PASSWORD` match Compose. `mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
 
 ```bash
 ./scripts/validate-api.sh
