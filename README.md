@@ -37,3 +37,16 @@ mvn spring-boot:run
 ```
 
 API documentation available at `http://localhost:8080/swagger-ui.html`.
+
+Pass `REDIS_PASSWORD` when Compose Redis is started with the password from `.env.example`:
+
+```bash
+REDIS_PASSWORD=redis_secret DB_PASSWORD=postgres mvn spring-boot:run
+./scripts/validate-api.sh
+```
+
+## Deploy
+
+Runbooks for Railway (preferred), Render, and Cloud Run, plus rollback and troubleshooting: [docs/deploy.md](docs/deploy.md).
+Kubernetes layout: [deploy/k8s/README.md](deploy/k8s/README.md).
+Do not run this JVM on Vercel Functions. No production project is created from this repository.
