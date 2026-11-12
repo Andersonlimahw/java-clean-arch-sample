@@ -50,6 +50,9 @@ public class PaymentJpaEntity {
     @Column(name = "version")
     private Long version;
 
+    @Column(name = "screening_reason", length = 500)
+    private String screeningReason;
+
     public PaymentJpaEntity() {
     }
 
@@ -62,7 +65,8 @@ public class PaymentJpaEntity {
             PaymentStatus status,
             Instant createdAt,
             Instant updatedAt,
-            Long version
+            Long version,
+            String screeningReason
     ) {
         this.id = id;
         this.userId = userId;
@@ -73,6 +77,7 @@ public class PaymentJpaEntity {
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.version = version;
+        this.screeningReason = screeningReason;
     }
 
     public static PaymentJpaEntity fromDomain(Payment payment) {
@@ -86,7 +91,8 @@ public class PaymentJpaEntity {
                 payment.getStatus(),
                 payment.getCreatedAt(),
                 payment.getUpdatedAt(),
-                payment.getVersion()
+                payment.getVersion(),
+                payment.getScreeningReason()
         );
     }
 
@@ -99,7 +105,8 @@ public class PaymentJpaEntity {
                 this.status,
                 this.createdAt,
                 this.updatedAt,
-                this.version
+                this.version,
+                this.screeningReason
         );
     }
 

@@ -2,6 +2,8 @@ package com.muse.payments.shared.infrastructure.idempotency;
 
 import com.muse.payments.shared.domain.ConflictException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -37,6 +39,7 @@ public class IdempotencyService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public IdempotencyDecision evaluateOrAcquire(UUID userId, String key, String payloadJson, Duration ttl) {
         Objects.requireNonNull(userId, "userId must not be null");
         Objects.requireNonNull(key, "key must not be null");
@@ -78,6 +81,7 @@ public class IdempotencyService {
         throw new ConflictException("Idempotency key cannot be reused while it is unexpired: " + key);
     }
 
+    @Transactional
     public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, int statusCode, String responseJson) {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
         int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, statusCode, responseJson);
@@ -86,6 +90,7 @@ public class IdempotencyService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void releaseProcessing(UUID userId, String key, String payloadJson, UUID leaseId) {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
         repository.deleteProcessing(userId, key, computeHash(payloadJson), leaseId);

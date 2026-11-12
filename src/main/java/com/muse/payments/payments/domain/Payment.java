@@ -17,6 +17,7 @@ public class Payment extends AggregateRoot<UUID> {
     private final Instant createdAt;
     private Instant updatedAt;
     private Long version;
+    private final String screeningReason;
 
     private Payment(
             UUID id,
@@ -26,7 +27,8 @@ public class Payment extends AggregateRoot<UUID> {
             PaymentStatus status,
             Instant createdAt,
             Instant updatedAt,
-            Long version
+            Long version,
+            String screeningReason
     ) {
         this.id = Objects.requireNonNull(id, "Payment id must not be null");
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
@@ -36,25 +38,46 @@ public class Payment extends AggregateRoot<UUID> {
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
         this.version = version;
+        this.screeningReason = screeningReason;
     }
 
     public static Payment create(UUID userId, Money money, String description) {
-        return open(userId, money, description, PaymentStatus.PENDING);
+        return create(UUID.randomUUID(), userId, money, description);
+    }
+
+    public static Payment create(UUID id, UUID userId, Money money, String description) {
+        return open(id, userId, money, description, PaymentStatus.PENDING, null, true);
     }
 
     /**
-     * Holds a payment that fraud screening could not clear. Confirmation is rejected
-     * until a later review moves it back to a confirmable state. This is not an approval.
+     * Holds a payment the provider did not clear. It is not approved: confirm is rejected
+     * until {@link #releaseFromReview()}. The owner may cancel, or a review may reject it.
      */
-    public static Payment createUnderReview(UUID userId, Money money, String description) {
-        return open(userId, money, description, PaymentStatus.UNDER_REVIEW);
+    public static Payment createUnderReview(UUID id, UUID userId, Money money, String description, String reason) {
+        return open(id, userId, money, description, PaymentStatus.UNDER_REVIEW, reason, false);
     }
 
-    private static Payment open(UUID userId, Money money, String description, PaymentStatus status) {
-        UUID id = UUID.randomUUID();
+    private static Payment open(
+            UUID id,
+            UUID userId,
+            Money money,
+            String description,
+            PaymentStatus status,
+            String screeningReason,
+            boolean created
+    ) {
         Instant now = Instant.now();
-        Payment payment = new Payment(id, userId, money, description, status, now, now, null);
-        payment.registerEvent(new PaymentCreatedEvent(id, userId, money.amount(), money.currency(), description));
+        String storedReason = screeningReason;
+        if (storedReason != null && storedReason.length() > 500) {
+            storedReason = storedReason.substring(0, 500);
+        }
+        Payment payment = new Payment(id, userId, money, description, status, now, now, null, storedReason);
+        if (created) {
+            payment.registerEvent(new PaymentCreatedEvent(id, userId, money.amount(), money.currency(), description));
+        } else {
+            payment.registerEvent(new PaymentHeldForReviewEvent(
+                    id, userId, money.amount(), money.currency(), description, screeningReason));
+        }
         return payment;
     }
 
@@ -68,7 +91,44 @@ public class Payment extends AggregateRoot<UUID> {
             Instant updatedAt,
             Long version
     ) {
-        return new Payment(id, userId, money, description, status, createdAt, updatedAt, version);
+        return rehydrate(id, userId, money, description, status, createdAt, updatedAt, version, null);
+    }
+
+    public static Payment rehydrate(
+            UUID id,
+            UUID userId,
+            Money money,
+            String description,
+            PaymentStatus status,
+            Instant createdAt,
+            Instant updatedAt,
+            Long version,
+            String screeningReason
+    ) {
+        return new Payment(id, userId, money, description, status, createdAt, updatedAt, version, screeningReason);
+    }
+
+    /**
+     * Review exit: the held payment becomes a normal pending payment and can be confirmed.
+     * This is the only path from {@link PaymentStatus#UNDER_REVIEW} to a confirmable state.
+     */
+    public void releaseFromReview() {
+        if (this.status != PaymentStatus.UNDER_REVIEW) {
+            throw new ConflictException("Cannot release payment in status: " + this.status);
+        }
+        this.status = PaymentStatus.PENDING;
+        this.updatedAt = Instant.now();
+        registerEvent(new PaymentCreatedEvent(this.id, this.userId, this.money.amount(), this.money.currency(), this.description));
+    }
+
+    /** Review exit: the held payment is cancelled and is not approved. */
+    public void rejectFromReview() {
+        if (this.status != PaymentStatus.UNDER_REVIEW) {
+            throw new ConflictException("Cannot reject payment in status: " + this.status);
+        }
+        this.status = PaymentStatus.CANCELLED;
+        this.updatedAt = Instant.now();
+        registerEvent(new PaymentCancelledEvent(this.id, this.userId, this.screeningReason));
     }
 
     public void complete() {
@@ -124,5 +184,9 @@ public class Payment extends AggregateRoot<UUID> {
 
     public Long getVersion() {
         return version;
+    }
+
+    public String getScreeningReason() {
+        return screeningReason;
     }
 }

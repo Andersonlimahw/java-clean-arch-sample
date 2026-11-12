@@ -17,9 +17,9 @@ management:
 
 app:
   fraud-screening:
+    # No default. Boot fails when FRAUD_SCREENING_BASE_URL is missing. The scheme must be https.
+    base-url: ${FRAUD_SCREENING_BASE_URL}
     connect-timeout: 200ms
-    read-timeout: 1500ms
-    http-pool-size: 8
 
 resilience4j:
   circuitbreaker:
@@ -35,6 +35,10 @@ resilience4j:
       fraudScreening:
         max-attempts: 2
         wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
   timelimiter:
     instances:
       fraudScreening:

@@ -40,6 +40,18 @@ public class Notification {
         return new Notification(id, userId, paymentId, "PAYMENT_CREATED", title, message, Instant.now());
     }
 
+    public static Notification paymentHeldForReview(UUID userId, UUID paymentId, BigDecimal amount, String currency) {
+        return new Notification(
+                UUID.randomUUID(),
+                userId,
+                paymentId,
+                "PAYMENT_HELD_FOR_REVIEW",
+                "Payment under review",
+                String.format("A payment of %s %s is under review and was not approved.", amount, currency),
+                Instant.now()
+        );
+    }
+
     public static Notification paymentCompleted(UUID userId, UUID paymentId) {
         return new Notification(
                 UUID.randomUUID(),

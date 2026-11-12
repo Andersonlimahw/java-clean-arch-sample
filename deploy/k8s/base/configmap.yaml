@@ -11,3 +11,5 @@ data:
   ACCESS_TOKEN_TTL: "PT15M"
   REFRESH_TOKEN_TTL: "P7D"
   SPRING_FLYWAY_ENABLED: "false"
+  # Replace with the real provider. Profile prod rejects a missing value and any non-https URL.
+  FRAUD_SCREENING_BASE_URL: "https://fraud-screening.payments.svc.cluster.local"

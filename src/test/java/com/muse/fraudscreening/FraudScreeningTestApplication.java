@@ -2,31 +2,38 @@ package com.muse.fraudscreening;
 
 import com.muse.payments.payments.infrastructure.fraud.FraudScreeningConfiguration;
 import com.muse.payments.payments.infrastructure.fraud.FraudScreeningProperties;
+import io.github.resilience4j.springboot3.circuitbreaker.autoconfigure.CircuitBreakerAutoConfiguration;
+import io.github.resilience4j.springboot3.circuitbreaker.autoconfigure.CircuitBreakerMetricsAutoConfiguration;
+import io.github.resilience4j.springboot3.retry.autoconfigure.RetryAutoConfiguration;
+import io.github.resilience4j.springboot3.retry.autoconfigure.RetryMetricsAutoConfiguration;
+import io.github.resilience4j.springboot3.timelimiter.autoconfigure.TimeLimiterAutoConfiguration;
+import io.github.resilience4j.springboot3.timelimiter.autoconfigure.TimeLimiterMetricsAutoConfiguration;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.metrics.export.simple.SimpleMetricsExportAutoConfiguration;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.autoconfigure.web.client.RestClientAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Import;
 
 /**
- * Narrow context for the fraud adapter. It does not scan the payments module, so the
- * test stub that clears every screening is not registered and the HTTP adapter is the port.
+ * Loads the fraud adapter and the Resilience4j registries without the rest of the platform.
  */
 @SpringBootConfiguration
-@EnableAutoConfiguration(excludeName = {
-        "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
-        "org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration",
-        "org.springframework.boot.autoconfigure.jdbc.JndiDataSourceAutoConfiguration",
-        "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration",
-        "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration",
-        "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration",
-        "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration",
-        "org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration",
-        "org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration",
-        "org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration",
-        "org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration",
-        "org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration"
-})
-@ConfigurationPropertiesScan(basePackageClasses = FraudScreeningProperties.class)
+@EnableConfigurationProperties(FraudScreeningProperties.class)
 @Import(FraudScreeningConfiguration.class)
+@ImportAutoConfiguration({
+        JacksonAutoConfiguration.class,
+        RestClientAutoConfiguration.class,
+        MetricsAutoConfiguration.class,
+        SimpleMetricsExportAutoConfiguration.class,
+        CircuitBreakerAutoConfiguration.class,
+        CircuitBreakerMetricsAutoConfiguration.class,
+        RetryAutoConfiguration.class,
+        RetryMetricsAutoConfiguration.class,
+        TimeLimiterAutoConfiguration.class,
+        TimeLimiterMetricsAutoConfiguration.class
+})
 public class FraudScreeningTestApplication {
 }

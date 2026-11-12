@@ -6,11 +6,13 @@ public record FraudScreeningResult(FraudScreeningOutcome outcome, String reason)
 
     public FraudScreeningResult {
         Objects.requireNonNull(outcome, "outcome must not be null");
-        Objects.requireNonNull(reason, "reason must not be null");
+        if (outcome != FraudScreeningOutcome.CLEAR && (reason == null || reason.isBlank())) {
+            throw new IllegalArgumentException("reason is required unless the outcome is CLEAR");
+        }
     }
 
     public static FraudScreeningResult clear() {
-        return new FraudScreeningResult(FraudScreeningOutcome.CLEAR, "Fraud provider cleared the payment");
+        return new FraudScreeningResult(FraudScreeningOutcome.CLEAR, null);
     }
 
     public static FraudScreeningResult declined(String reason) {

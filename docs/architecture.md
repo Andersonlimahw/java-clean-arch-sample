@@ -75,7 +75,9 @@ sequenceDiagram
     C->>A: POST /api/v1/auth/login
     A-->>C: access JWT + refresh token
     C->>P: POST /api/v1/payments (Bearer, Idempotency-Key)
-    P->>DB: INSERT payment + outbox_events
+    P->>DB: commit idempotency lease
+    P->>P: fraud screening, no database transaction
+    P->>DB: commit payment + outbox + idempotent response
     P-->>C: 201 PaymentResponse
     R->>DB: SELECT FOR UPDATE SKIP LOCKED
     R->>Q: publish payment.created
@@ -118,7 +120,7 @@ Status codes the handlers return:
 
 Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_ADMIN`. The payment filter chain requires one of those roles. A missing or invalid token is 401. A known token without them is 403 `application/problem+json`. An ownership miss stays 404 so callers cannot tell whether another user's payment exists. `GET /api/v1/notifications` stays any authenticated user and owner-scoped.
 
-A repeated create with the same user, unexpired `Idempotency-Key`, and canonical body (amount scaled to 2 decimals, currency uppercased) returns the stored response and sets `Idempotent-Replayed: true`. `expires_at` is 24 hours ahead. Lookup requires `expires_at > now`. After that, the same key is a new payment. The create transaction commits the lease, the payment, and the cached response together. Completion updates only the unexpired `PROCESSING` row for that attempt's `lease_id`. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until a short batch remains (`app.idempotency.cleanup-interval-ms`, default 1 hour). Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
+A repeated create with the same user, unexpired `Idempotency-Key`, and canonical body (amount scaled to 2 decimals, currency uppercased) returns the stored response and sets `Idempotent-Replayed: true`. `expires_at` is 24 hours ahead. Lookup requires `expires_at > now`. After that, the same key is a new payment. Create commits the idempotency lease in its own transaction, calls the fraud provider with no database connection held, then commits the payment, the outbox row, and the cached response together. An explicit decline commits a 422 problem body on that lease instead of a payment. Any other failure deletes the `PROCESSING` lease. Completion updates only the unexpired `PROCESSING` row for that attempt's `lease_id`. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until a short batch remains (`app.idempotency.cleanup-interval-ms`, default 1 hour). Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
 
 OpenAPI: `/v3/api-docs`. Swagger UI: `/swagger-ui.html`.
 
@@ -136,12 +138,24 @@ Each attempt publishes to the topic exchange `payments.events` with its own conf
 | Outbox `event_type` | Routing key | Queue |
 |---|---|---|
 | `PaymentCreated` | `payment.created` | `payments.created.notifications` |
+| `PaymentHeldForReview` | `payment.held` | `payments.created.notifications` |
 | `PaymentCompleted` | `payment.completed` | `payments.created.notifications` |
 | `PaymentCancelled` | `payment.cancelled` | `payments.created.notifications` |
 
 The queue name and the dead-letter routing key `payment.created.dlq` stayed from the created-only topology. Completed and cancelled are additional bindings on that queue, and every notification reject uses the same dead-letter key. The dead-letter exchange is the durable direct exchange `payments.events.dlx`, bound to the durable queue `payments.created.notifications.dlq`. The main queue sets no message TTL and no max length.
 
-`PaymentNotificationConsumer` listens on `payments.created.notifications`. It inserts the notification and a `processed_events` row (`consumer = PaymentNotificationConsumer`, primary key `(consumer, event_id)`) in one transaction. The event id is `X-Event-Id`, or a body `eventId` when the header is absent. `paymentId` is not an event id. A second delivery of the same event id is acknowledged and does not insert a second notification. `PaymentCreated`, `PaymentCompleted`, and `PaymentCancelled` each create a notification (`PAYMENT_CREATED`, `PAYMENT_COMPLETED`, `PAYMENT_CANCELLED`).
+`PaymentNotificationConsumer` listens on `payments.created.notifications`. It inserts the notification and a `processed_events` row (`consumer = PaymentNotificationConsumer`, primary key `(consumer, event_id)`) in one transaction. The event id is `X-Event-Id`, or a body `eventId` when the header is absent. `paymentId` is not an event id. A second delivery of the same event id is acknowledged and does not insert a second notification. `PaymentCreated`, `PaymentHeldForReview`, `PaymentCompleted`, and `PaymentCancelled` each create a notification (`PAYMENT_CREATED`, `PAYMENT_HELD_FOR_REVIEW`, `PAYMENT_COMPLETED`, `PAYMENT_CANCELLED`). `PaymentHeldForReview` says the payment is under review and was not approved. `PaymentCreated` is emitted only for a payment that screening cleared, or later when a review releases a held payment to `PENDING`.
+
+Payment status:
+
+| Status | Meaning | Confirm | Cancel | Review |
+|---|---|---|---|---|
+| `PENDING` | Screening cleared the payment. It is not completed yet. | to `COMPLETED` | to `CANCELLED` | rejected |
+| `UNDER_REVIEW` | The provider did not return a decision. This is not an approval. The screening reason is stored on the row. | 409 | to `CANCELLED` | `APPROVE` moves it to `PENDING`; `REJECT` cancels it |
+| `COMPLETED` | Confirmed. | 409 | 409 | rejected |
+| `CANCELLED` | Cancelled by the owner or rejected in review. | 409 | 409 | rejected |
+
+The fraud provider is an HTTP `POST /v1/screenings` behind `FraudScreeningPort`. Resilience4j (retry, circuit breaker, time limiter) lives only in the infrastructure adapter. The instance name is `fraudScreening`. `FRAUD_SCREENING_BASE_URL` is required and must be `https` on the `prod` profile. Local Compose runs a WireMock that answers `CLEAR`. Failure policy is [ADR 0012](adr/0012-fraud-screening-failure-policy.md).
 
 Permanent failures throw `AmqpRejectAndDontRequeueException` and skip the retry budget: a missing or invalid event id, a missing event type, invalid JSON, a non-object payload, a missing or invalid identifier, or an unknown event type. The listener transaction rolls back, so `processed_events` does not keep that id. Transient failures (the listener wraps them in `RuntimeException`) are retried by the advice chain on the listener container factory: `app.messaging.listener-max-attempts` (default 5), `listener-initial-interval-ms` (default 500), `listener-multiplier` (default 2.0), and `listener-max-interval-ms` (default 10000, a hard cap), with exponential backoff and jitter. `spring.rabbitmq.listener.simple.retry` does not configure this chain. Other listener container properties, including `auto-startup`, still come from Boot. `defaultRequeueRejected` is false. After the attempt budget, `RejectAndDontRequeueRecoverer` rejects without requeue and RabbitMQ routes the message to the DLQ. DLQ messages stay there until an operator inspects them.
 

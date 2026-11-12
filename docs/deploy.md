@@ -23,6 +23,7 @@ Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env
 | `MANAGEMENT_OTLP_TRACING_ENDPOINT` | no | Full OTLP HTTP traces URL, for example `http://collector:4318/v1/traces`. Spring Boot creates the exporter only when this is set. |
 | `APP_MIGRATION_ONLY` | k8s Job | `true` activates the `migration` profile (`application-migration.yml`). The process applies Flyway, does not serve HTTP, and does not start Rabbit listeners or the outbox scheduler. Exit `0` only when Flyway has applied the schema and nothing is pending. Startup or migration failure exits non-zero. `--app.migration-only=false` on the command line overrides a `true` environment variable. |
 | `SPRING_FLYWAY_ENABLED` | k8s only | Leave unset on Railway, Render, and Cloud Run so startup migrations stay on (`application.yml` defaults `enabled: true`). The Kubernetes API ConfigMap sets `false`. The migration Job sets `true`. |
+| `FRAUD_SCREENING_BASE_URL` | yes in prod | Base URL of `POST /v1/screenings`. Profile `prod` has no default and refuses to start unless the scheme is `https`. Local Compose and `.env.example` use the WireMock on `http://localhost:8090` (inside Compose, `http://fraud-screening:8080`). That stub answers `CLEAR` so `scripts/validate-api.sh` can confirm a payment. |
 
 `prod` without JWT PEMs refuses to start. That is intentional.
 
@@ -36,7 +37,7 @@ From the repository root. Passwords and hosts come from `.env.example`, which ma
 set -a
 source .env.example
 set +a
-docker compose up -d postgres redis rabbitmq
+docker compose up -d postgres redis rabbitmq fraud-screening
 mvn spring-boot:run
 ```
 

@@ -43,23 +43,32 @@ class ArchitectureTest {
             )
             .as("Application layer must not depend on web controllers or infrastructure entities");
 
+    private static final String[] RESILIENCE_AND_HTTP_CLIENTS = {
+            "io.github.resilience4j..",
+            "org.springframework.web.client..",
+            "org.springframework.web.reactive.function.client..",
+            "org.springframework.http.client..",
+            "java.net.http..",
+            "okhttp3..",
+            "org.apache.hc.client5..",
+            "org.apache.http.."
+    };
+
     @ArchTest
     static final ArchRule domain_should_not_depend_on_resilience4j_or_http_clients = noClasses()
             .that().resideInAPackage("..domain..")
-            .should().dependOnClassesThat().resideInAnyPackage(
-                    "io.github.resilience4j..",
-                    "org.springframework.web.client..",
-                    "java.net.http.."
-            )
+            .should().dependOnClassesThat().resideInAnyPackage(RESILIENCE_AND_HTTP_CLIENTS)
             .as("Domain must not import Resilience4j or an HTTP client");
 
     @ArchTest
     static final ArchRule application_should_not_depend_on_resilience4j_or_http_clients = noClasses()
             .that().resideInAPackage("..application..")
-            .should().dependOnClassesThat().resideInAnyPackage(
-                    "io.github.resilience4j..",
-                    "org.springframework.web.client..",
-                    "java.net.http.."
-            )
+            .should().dependOnClassesThat().resideInAnyPackage(RESILIENCE_AND_HTTP_CLIENTS)
             .as("Application must not import Resilience4j or an HTTP client; resilience stays in infrastructure");
+
+    @ArchTest
+    static final ArchRule application_should_not_depend_on_infrastructure = noClasses()
+            .that().resideInAPackage("..application..")
+            .should().dependOnClassesThat().resideInAPackage("..infrastructure..")
+            .as("Application must not import infrastructure adapters");
 }

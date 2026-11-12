@@ -1,18 +1,19 @@
 package com.muse.payments.payments.application;
 
+import com.muse.payments.payments.domain.Money;
 import com.muse.payments.payments.domain.Payment;
+import com.muse.payments.payments.domain.PaymentDeclinedException;
 import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentStatus;
 import com.muse.payments.shared.application.IntegrationEvent;
 import com.muse.payments.shared.application.OutboxPort;
-import com.muse.payments.shared.domain.ConflictException;
-import com.muse.payments.shared.domain.ValidationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,53 +24,52 @@ class CreatePaymentCommandHandlerTest {
 
     private final InMemoryPayments payments = new InMemoryPayments();
     private final RecordingOutbox outbox = new RecordingOutbox();
+    private final ScreenedPaymentRecorder recorder = new ScreenedPaymentRecorder(payments, outbox);
 
     @Test
-    @DisplayName("A cleared screening creates a pending payment")
-    void clearScreeningPersistsPendingPayment() {
+    @DisplayName("A cleared screening records PaymentCreated with status PENDING")
+    void clearScreeningRecordsCreatedEvent() {
         CreatePaymentCommandHandler handler = handler(FraudScreeningResult.clear());
 
         PaymentResponse response = handler.handle(command());
 
         assertThat(response.status()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(payments.saved).hasSize(1);
-        assertThat(outbox.appended).isEqualTo(1);
+        assertThat(outbox.events).singleElement().extracting(IntegrationEvent::eventType).isEqualTo("PaymentCreated");
+        assertThat(payloadOf(outbox.events.getFirst())).containsEntry("status", "PENDING");
     }
 
     @Test
-    @DisplayName("A declined screening does not create or approve a payment")
+    @DisplayName("A declined screening throws without a provider reason and writes nothing")
     void declinedScreeningDoesNotPersist() {
-        CreatePaymentCommandHandler handler = handler(
-                FraudScreeningResult.declined("Fraud provider rejected the screening with HTTP 422"));
+        CreatePaymentCommandHandler handler = handler(FraudScreeningResult.declined("stolen card"));
 
         assertThatThrownBy(() -> handler.handle(command()))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("declined")
-                .hasMessageContaining("HTTP 422");
+                .isInstanceOf(PaymentDeclinedException.class)
+                .hasMessage(PaymentDeclinedException.PUBLIC_MESSAGE);
         assertThat(payments.saved).isEmpty();
-        assertThat(outbox.appended).isZero();
+        assertThat(outbox.events).isEmpty();
     }
 
     @Test
-    @DisplayName("An unavailable screening holds the payment for review and it cannot be confirmed")
-    void underReviewIsPersistedAndCannotBeConfirmed() {
-        CreatePaymentCommandHandler handler = handler(
-                FraudScreeningResult.underReview("Fraud screening unavailable"));
+    @DisplayName("An unavailable screening records PaymentHeldForReview and not PaymentCreated")
+    void underReviewRecordsHeldEvent() {
+        CreatePaymentCommandHandler handler = handler(FraudScreeningResult.underReview("provider down"));
 
         PaymentResponse response = handler.handle(command());
 
         assertThat(response.status()).isEqualTo(PaymentStatus.UNDER_REVIEW);
-        assertThat(payments.saved).hasSize(1);
-        assertThatThrownBy(payments.saved.getFirst()::complete)
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("UNDER_REVIEW");
+        assertThat(response.screeningReason()).isEqualTo("provider down");
+        assertThat(outbox.events).singleElement().extracting(IntegrationEvent::eventType).isEqualTo("PaymentHeldForReview");
+        assertThat(payloadOf(outbox.events.getFirst())).containsEntry("status", "UNDER_REVIEW");
     }
 
     private CreatePaymentCommandHandler handler(FraudScreeningResult result) {
-        return new CreatePaymentCommandHandler(
-                payments,
-                outbox,
-                new FraudScreeningService(request -> result));
+        return new CreatePaymentCommandHandler(request -> result, recorder);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> payloadOf(IntegrationEvent event) {
+        return (Map<String, Object>) event.payload();
     }
 
     private static CreatePaymentCommand command() {
@@ -102,11 +102,11 @@ class CreatePaymentCommandHandlerTest {
     }
 
     private static final class RecordingOutbox implements OutboxPort {
-        private int appended;
+        private final List<IntegrationEvent> events = new ArrayList<>();
 
         @Override
         public void append(IntegrationEvent event) {
-            appended++;
+            events.add(event);
         }
     }
 }

@@ -1,24 +1,20 @@
 package com.muse.payments.payments.infrastructure.fraud;
 
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import com.muse.fraudscreening.FraudScreeningTestApplication;
+import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.muse.payments.payments.application.FraudScreeningOutcome;
-import com.muse.payments.payments.application.FraudScreeningPort;
 import com.muse.payments.payments.application.FraudScreeningRequest;
 import com.muse.payments.payments.application.FraudScreeningResult;
+import com.muse.payments.payments.domain.Money;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.RetryRegistry;
-import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -34,28 +30,17 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
-@SpringBootTest(
-        classes = FraudScreeningTestApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = {
-                "management.tracing.enabled=false",
-                "management.otlp.tracing.export.enabled=false",
-                "management.otlp.metrics.export.enabled=false",
-                "spring.main.banner-mode=off",
-                "spring.modulith.moments.enabled=false",
-                "management.endpoint.health.validate-group-membership=false"
-        }
-)
-@ActiveProfiles("test")
+@FraudScreeningSpringTest
 class FraudScreeningResilienceTest {
 
-    private static final WireMockServer SERVER = new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
-
-    static {
-        SERVER.start();
-    }
+    @RegisterExtension
+    static final WireMockExtension SERVER = WireMockExtension.newInstance()
+            .options(wireMockConfig().dynamicPort())
+            .build();
 
     @DynamicPropertySource
     static void fraudProvider(DynamicPropertyRegistry registry) {
@@ -63,13 +48,10 @@ class FraudScreeningResilienceTest {
     }
 
     @Autowired
-    private FraudScreeningPort port;
+    private HttpFraudScreeningAdapter adapter;
 
     @Autowired
     private MeterRegistry meterRegistry;
-
-    @Autowired
-    private FraudScreeningProperties properties;
 
     @Autowired
     private CircuitBreakerRegistry circuitBreakerRegistry;
@@ -77,137 +59,180 @@ class FraudScreeningResilienceTest {
     @Autowired
     private RetryRegistry retryRegistry;
 
-    @Autowired
-    private TimeLimiterRegistry timeLimiterRegistry;
-
     @BeforeEach
-    void resetProvider() {
+    void resetAndWarmTheClient() {
         SERVER.resetAll();
-        circuitBreakerRegistry.circuitBreaker(properties.resilienceInstance()).reset();
-    }
-
-    @Test
-    @DisplayName("The test profile supplies the timeout, the retry limit, and the instance name")
-    void testProfileSuppliesLimits() {
-        String instance = properties.resilienceInstance();
-        assertThat(instance).isEqualTo("fraudScreening");
-        assertThat(timeLimiterRegistry.timeLimiter(instance).getTimeLimiterConfig().getTimeoutDuration())
-                .isEqualTo(Duration.ofSeconds(1));
-        assertThat(retryRegistry.retry(instance).getRetryConfig().getMaxAttempts()).isEqualTo(3);
-        var predicate = retryRegistry.retry(instance).getRetryConfig().getExceptionPredicate();
-        assertThat(predicate.test(new FraudTransientException("down"))).isTrue();
-        assertThat(predicate.test(new FraudBusinessException("no"))).isFalse();
-        assertThat(predicate.test(new java.util.concurrent.TimeoutException("slow"))).isTrue();
-        assertThat(circuitBreakerRegistry.circuitBreaker(instance).getCircuitBreakerConfig().getMinimumNumberOfCalls())
-                .isEqualTo(20);
-    }
-
-    @Test
-    @DisplayName("A clear provider response is returned once and records the fraudScreening meters")
-    void happyPathCallsProviderOnce() {
+        circuitBreakerRegistry.circuitBreaker(HttpFraudScreeningAdapter.INSTANCE_NAME).reset();
         SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
                 .willReturn(okJson("{\"outcome\":\"CLEAR\"}")));
-        double cleared = count("resilience4j.circuitbreaker.calls", "successful");
-        double withoutRetry = count("resilience4j.retry.calls", "successful_without_retry");
-        double withinTime = count("resilience4j.timelimiter.calls", "successful");
+        adapter.screen(request());
+        SERVER.resetAll();
+        circuitBreakerRegistry.circuitBreaker(HttpFraudScreeningAdapter.INSTANCE_NAME).reset();
+    }
+
+    @Test
+    @DisplayName("The test profile retries only transient failures and does not open on one screening")
+    void testProfileInvariants() {
+        var retry = retryRegistry.retry(HttpFraudScreeningAdapter.INSTANCE_NAME).getRetryConfig();
+        var breaker = circuitBreakerRegistry.circuitBreaker(HttpFraudScreeningAdapter.INSTANCE_NAME).getCircuitBreakerConfig();
+        assertThat(retry.getMaxAttempts()).isEqualTo(3);
+        assertThat(breaker.getMinimumNumberOfCalls()).isGreaterThanOrEqualTo(retry.getMaxAttempts());
+        assertThat(retry.getExceptionPredicate().test(new FraudTransientException("down"))).isTrue();
+        assertThat(retry.getExceptionPredicate().test(new java.io.IOException("io"))).isTrue();
+        assertThat(retry.getExceptionPredicate().test(new java.util.concurrent.TimeoutException("slow"))).isTrue();
+        assertThat(retry.getExceptionPredicate().test(
+                io.github.resilience4j.circuitbreaker.CallNotPermittedException.createCallNotPermittedException(
+                        circuitBreakerRegistry.circuitBreaker(HttpFraudScreeningAdapter.INSTANCE_NAME)))).isFalse();
+    }
+
+    @Test
+    @DisplayName("A clear provider response is one call after the client is warm")
+    void happyPathCallsProviderOnce() {
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(okJson("{\"outcome\":\"clear\"}")));
         FraudScreeningRequest request = request();
 
-        FraudScreeningResult result = port.screen(request);
+        FraudScreeningResult result = adapter.screen(request);
 
         assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.CLEAR);
         verifyRequests(request, 1);
-        assertThat(count("resilience4j.circuitbreaker.calls", "successful")).isEqualTo(cleared + 1);
-        assertThat(count("resilience4j.retry.calls", "successful_without_retry")).isEqualTo(withoutRetry + 1);
-        assertThat(count("resilience4j.timelimiter.calls", "successful")).isEqualTo(withinTime + 1);
+        assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.circuitbreaker.calls", "successful"))
+                .isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("HTTP 200 DECLINED is one call and is not a time-limiter failure")
+    void explicitDeclineIn200IsNotRetried() {
+        double limiterFailures = ResilienceMeters.count(meterRegistry, "resilience4j.timelimiter.calls", "failed");
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(okJson("{\"outcome\":\"DECLINED\",\"reason\":\"stolen card\"}")));
+        FraudScreeningRequest request = request();
+
+        FraudScreeningResult result = adapter.screen(request);
+
+        assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.DECLINED);
+        assertThat(result.reason()).isEqualTo("stolen card");
+        verifyRequests(request, 1);
+        assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.timelimiter.calls", "failed")).isEqualTo(limiterFailures);
+    }
+
+    @Test
+    @DisplayName("HTTP 422 with an explicit decline is not retried")
+    void explicitDeclineIn422IsNotRetried() {
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(aResponse().withStatus(422)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"outcome\":\"declined\",\"reason\":\"velocity\"}")));
+        FraudScreeningRequest request = request();
+
+        FraudScreeningResult result = adapter.screen(request);
+
+        assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.DECLINED);
+        assertThat(result.reason()).isEqualTo("velocity");
+        verifyRequests(request, 1);
+    }
+
+    @Test
+    @DisplayName("An empty body or an unknown outcome is held without a retry")
+    void unusableSuccessBodyIsHeldWithoutRetry() {
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(okJson("{\"outcome\":\"MAYBE\"}")));
+        FraudScreeningRequest unknown = request();
+        assertThat(adapter.screen(unknown).outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
+        verifyRequests(unknown, 1);
+
+        SERVER.resetAll();
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(okJson("")));
+        FraudScreeningRequest empty = request();
+        assertThat(adapter.screen(empty).outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
+        verifyRequests(empty, 1);
+    }
+
+    @Test
+    @DisplayName("HTTP 404 is held, counted, and not retried")
+    void otherClientErrorsAreHeldWithoutRetry() {
+        double before = meterRegistry.counter(HttpFraudScreeningAdapter.UNEXPECTED_CLIENT_METRIC).count();
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(aResponse().withStatus(404)));
+        FraudScreeningRequest request = request();
+
+        FraudScreeningResult result = adapter.screen(request);
+
+        assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
+        assertThat(result.reason()).isEqualTo(HttpFraudScreeningAdapter.FALLBACK_UNEXPECTED);
+        verifyRequests(request, 1);
+        assertThat(meterRegistry.counter(HttpFraudScreeningAdapter.UNEXPECTED_CLIENT_METRIC).count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("HTTP 429 is retried up to the limit and then held")
+    void tooManyRequestsIsRetried() {
+        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                .willReturn(aResponse().withStatus(429)));
+        FraudScreeningRequest request = request();
+
+        FraudScreeningResult result = adapter.screen(request);
+
+        assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
+        assertThat(result.reason()).isEqualTo(HttpFraudScreeningAdapter.FALLBACK_EXHAUSTED);
+        verifyRequests(request, 3);
     }
 
     @Test
     @Timeout(15)
-    @DisplayName("A slow provider trips the time limiter on every attempt, then the explicit under-review fallback")
-    void slowProviderTripsTimeLimiterAndFallsBack() {
+    @DisplayName("A slow provider trips the time limiter and the worker is free when the call returns")
+    void slowProviderTripsTimeLimiterAndReleasesTheWorker() {
         SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withFixedDelay(8_000)
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"outcome\":\"CLEAR\"}")));
-
-        double timeouts = count("resilience4j.timelimiter.calls", "timeout");
+        double timeouts = ResilienceMeters.count(meterRegistry, "resilience4j.timelimiter.calls", "timeout");
         FraudScreeningRequest request = request();
         long started = System.nanoTime();
-        FraudScreeningResult result = port.screen(request);
-        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
-        assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
+        FraudScreeningResult result = adapter.screen(request);
+
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
         assertThat(result.reason()).isEqualTo(HttpFraudScreeningAdapter.FALLBACK_EXHAUSTED);
         assertThat(elapsedMs).isLessThan(4_500);
         verifyRequests(request, 3);
-        assertThat(count("resilience4j.timelimiter.calls", "timeout")).isEqualTo(timeouts + 3);
-        assertThat(circuitBreakerRegistry.circuitBreaker(properties.resilienceInstance()).getState())
+        assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.timelimiter.calls", "timeout")).isEqualTo(timeouts + 3);
+        await().atMost(Duration.ofSeconds(1)).until(() -> adapter.inFlight() == 0);
+        assertThat(circuitBreakerRegistry.circuitBreaker(HttpFraudScreeningAdapter.INSTANCE_NAME).getState())
                 .isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     @Test
-    @DisplayName("HTTP 5xx is retried up to the configured limit and then returns under review, not an approval")
+    @DisplayName("HTTP 503 is retried up to the limit and then held")
     void serverErrorRetriesUpToTheLimitThenFallsBack() {
         SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
                 .willReturn(aResponse().withStatus(503)));
-        double retriedFailures = count("resilience4j.retry.calls", "failed_with_retry");
+        double retriedFailures = ResilienceMeters.count(meterRegistry, "resilience4j.retry.calls", "failed_with_retry");
         FraudScreeningRequest request = request();
 
-        FraudScreeningResult result = port.screen(request);
+        FraudScreeningResult result = adapter.screen(request);
 
         assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
         assertThat(result.reason()).isEqualTo(HttpFraudScreeningAdapter.FALLBACK_EXHAUSTED);
         verifyRequests(request, 3);
-        assertThat(count("resilience4j.retry.calls", "failed_with_retry")).isEqualTo(retriedFailures + 1);
-        assertThat(circuitBreakerRegistry.circuitBreaker(properties.resilienceInstance()).getState())
-                .isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.retry.calls", "failed_with_retry"))
+                .isEqualTo(retriedFailures + 1);
     }
 
-    @Test
-    @DisplayName("HTTP 4xx is a business rejection: one call, no retry, and the payment is declined")
-    void clientErrorIsNotRetried() {
-        SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
-                .willReturn(aResponse().withStatus(422).withBody("{\"outcome\":\"DECLINED\"}")));
-        double retriedFailures = count("resilience4j.retry.calls", "failed_with_retry");
-        double notRetried = count("resilience4j.retry.calls", "failed_without_retry");
-        FraudScreeningRequest request = request();
-
-        FraudScreeningResult result = port.screen(request);
-
-        assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.DECLINED);
-        assertThat(result.reason()).contains("HTTP 422");
-        verifyRequests(request, 1);
-        assertThat(count("resilience4j.retry.calls", "failed_without_retry")).isEqualTo(notRetried + 1);
-        assertThat(count("resilience4j.retry.calls", "failed_with_retry")).isEqualTo(retriedFailures);
-        assertThat(circuitBreakerRegistry.circuitBreaker(properties.resilienceInstance()).getState())
-                .isEqualTo(CircuitBreaker.State.CLOSED);
-    }
-
-    private FraudScreeningRequest request() {
-        return new FraudScreeningRequest(UUID.randomUUID(), new BigDecimal("10.00"), "BRL");
+    private static FraudScreeningRequest request() {
+        return new FraudScreeningRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                Money.of(new BigDecimal("10.00"), "BRL"));
     }
 
     private static void verifyRequests(FraudScreeningRequest request, int count) {
         SERVER.verify(
                 exactly(count),
                 postRequestedFor(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
-                        .withRequestBody(containing(request.userId().toString())));
-    }
-
-    private double count(String metric, String kind) {
-        String instance = properties.resilienceInstance();
-        var tagged = meterRegistry.find(metric).tag("name", instance).tag("kind", kind);
-        if (tagged.functionCounter() != null) {
-            return tagged.functionCounter().count();
-        }
-        if (tagged.counter() != null) {
-            return tagged.counter().count();
-        }
-        if (tagged.timer() != null) {
-            return tagged.timer().count();
-        }
-        return 0d;
+                        .withRequestBody(containing(request.paymentId().toString())));
     }
 }

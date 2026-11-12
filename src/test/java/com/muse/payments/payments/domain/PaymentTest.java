@@ -92,7 +92,7 @@ class PaymentTest {
     @DisplayName("A payment held for fraud review cannot be confirmed and can be cancelled")
     void underReview_cannotBeCompletedAndCanBeCancelled() {
         Payment held = Payment.createUnderReview(
-                UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held");
+                UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "provider unavailable");
 
         assertThat(held.getStatus()).isEqualTo(PaymentStatus.UNDER_REVIEW);
         assertThatThrownBy(held::complete)
@@ -101,6 +101,23 @@ class PaymentTest {
 
         held.cancel("Review abandoned");
         assertThat(held.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("A review can release a held payment to PENDING or reject it")
+    void reviewReleasesOrRejectsAHeldPayment() {
+        Payment released = Payment.createUnderReview(
+                UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
+        released.pullDomainEvents();
+        released.releaseFromReview();
+        assertThat(released.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(released.pullDomainEvents()).singleElement().isInstanceOf(PaymentCreatedEvent.class);
+
+        Payment rejected = Payment.createUnderReview(
+                UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
+        rejected.pullDomainEvents();
+        rejected.rejectFromReview();
+        assertThat(rejected.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
     }
 
     @Test

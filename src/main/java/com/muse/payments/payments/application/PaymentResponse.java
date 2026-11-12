@@ -16,7 +16,8 @@ public record PaymentResponse(
         PaymentStatus status,
         Instant createdAt,
         Instant updatedAt,
-        Long version
+        Long version,
+        String screeningReason
 ) {
     public static PaymentResponse from(Payment payment) {
         return new PaymentResponse(
@@ -28,7 +29,8 @@ public record PaymentResponse(
                 payment.getStatus(),
                 payment.getCreatedAt(),
                 payment.getUpdatedAt(),
-                payment.getVersion()
+                payment.getVersion(),
+                payment.getScreeningReason()
         );
     }
 }
