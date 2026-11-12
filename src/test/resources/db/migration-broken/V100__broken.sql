@@ -1,0 +1,1 @@
+SELECT missing_relation_for_migration_failure.x FROM missing_relation_for_migration_failure;

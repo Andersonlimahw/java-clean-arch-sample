@@ -143,7 +143,7 @@ class ObservabilityMetricsIT extends TestcontainersBase {
     }
 
     @Test
-    @DisplayName("The request trace is stored on the outbox row and continued on the consumed message")
+    @DisplayName("The request trace reaches the consumer after the relay waits for a publisher confirm")
     void requestTraceContinuesAcrossTheOutbox() {
         Span span = tracer.nextSpan().name("http-post-payment").start();
         String traceId = span.context().traceId();

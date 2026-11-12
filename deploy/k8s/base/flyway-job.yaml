@@ -21,6 +21,9 @@ spec:
             - secretRef:
                 name: payments-secret
           env:
+            # ConfigMap sets SPRING_FLYWAY_ENABLED=false for replicas. This entry overrides
+            # that for the Job. The application also forces Flyway on, skips HTTP and
+            # consumers, and exits 0 only after migrations are applied.
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
             - name: APP_MIGRATION_ONLY
