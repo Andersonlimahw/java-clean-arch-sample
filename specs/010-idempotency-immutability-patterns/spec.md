@@ -51,7 +51,7 @@ stateDiagram-v2
 - Keys are partitioned per authenticated user; Client A and Client B generating identical UUIDs never collide or share cached responses.
 
 ### 2.4 Payload Hashing (Fingerprinting)
-- The server stores the lowercase SHA-256 hex of the canonical JSON body (`ObjectMapper` serialization of `CreatePaymentRequest`):
+- The server stores the lowercase SHA-256 hex of the canonical JSON body. Amount is scaled to 2 decimal places and currency is uppercased before `ObjectMapper` serialization, so `10` and `10.00`, or `brl` and `BRL`, are the same request:
   ```
   request_hash = SHA256(canonicalJsonBody)
   ```

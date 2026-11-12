@@ -27,6 +27,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,8 +37,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URI;
-import java.time.Duration;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -78,6 +81,7 @@ public class PaymentController {
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Create a new payment with idempotency guarantee")
+    @Transactional(rollbackFor = Exception.class)
     public ResponseEntity<?> createPayment(
             @RequestHeader(value = HEADER_IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @Valid @RequestBody CreatePaymentRequest request,
@@ -91,13 +95,14 @@ public class PaymentController {
         }
 
         String normalizedKey = idempotencyKey.trim();
-        String requestPayloadJson = objectMapper.writeValueAsString(request);
+        CreatePaymentRequest canonical = canonicalize(request);
+        String requestPayloadJson = objectMapper.writeValueAsString(canonical);
 
         IdempotencyDecision decision = idempotencyService.evaluateOrAcquire(
                 currentUser.userId(),
                 normalizedKey,
                 requestPayloadJson,
-                Duration.ofHours(24)
+                IdempotencyService.DEFAULT_TTL
         );
 
         if (decision.isReplayed()) {
@@ -109,9 +114,9 @@ public class PaymentController {
 
         CreatePaymentCommand command = new CreatePaymentCommand(
                 currentUser.userId(),
-                request.amount(),
-                request.currency(),
-                request.description()
+                canonical.amount(),
+                canonical.currency(),
+                canonical.description()
         );
 
         PaymentResponse response;
@@ -144,6 +149,12 @@ public class PaymentController {
         return ResponseEntity
                 .created(URI.create("/api/v1/payments/" + response.id()))
                 .body(response);
+    }
+
+    private static CreatePaymentRequest canonicalize(CreatePaymentRequest request) {
+        BigDecimal amount = request.amount().setScale(2, RoundingMode.HALF_UP);
+        String currency = request.currency().trim().toUpperCase(Locale.ROOT);
+        return new CreatePaymentRequest(amount, currency, request.description());
     }
 
     @GetMapping("/{id}")

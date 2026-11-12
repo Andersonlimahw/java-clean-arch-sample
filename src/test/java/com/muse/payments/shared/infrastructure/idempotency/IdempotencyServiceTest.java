@@ -11,7 +11,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -198,16 +197,17 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    @DisplayName("a missed completion does not fail the caller that already created the payment")
-    void saveCompleted_ignoresAMissedUpdate() {
+    @DisplayName("a missed completion fails so the surrounding transaction can roll the payment back")
+    void saveCompleted_failsWhenNoRowMatches() {
         UUID userId = UUID.randomUUID();
         String key = "lost-lease";
         String payload = "{\"amount\":100}";
         UUID leaseId = UUID.randomUUID();
         when(repository.markCompleted(any(), any(), any(), any(), eq(201), any())).thenReturn(0);
 
-        assertThatCode(() -> service.saveCompleted(userId, key, payload, leaseId, 201, "{\"id\":\"abc\"}"))
-                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> service.saveCompleted(userId, key, payload, leaseId, 201, "{\"id\":\"abc\"}"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("matched no row");
     }
 
     @Test

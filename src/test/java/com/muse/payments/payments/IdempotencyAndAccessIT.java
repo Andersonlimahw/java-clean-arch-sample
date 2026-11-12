@@ -301,6 +301,41 @@ class IdempotencyAndAccessIT extends TestcontainersBase {
     }
 
     @Test
+    @DisplayName("equivalent amount and currency replay, and an expired key accepts a different payload")
+    void equivalentPayloadReplaysUntilTheKeyExpires() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = jwtTokenIssuer.issueAccessToken(userId, List.of("USER"));
+        String key = "canon-" + UUID.randomUUID();
+        CreatePaymentRequest first = new CreatePaymentRequest(new BigDecimal("10"), "brl", "Same charge");
+        CreatePaymentRequest equivalent = new CreatePaymentRequest(new BigDecimal("10.00"), "BRL", "Same charge");
+
+        String paymentId = createPayment(token, key, first);
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(equivalent)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replayed", "true"))
+                .andExpect(jsonPath("$.id").value(paymentId))
+                .andExpect(jsonPath("$.currency").value("BRL"))
+                .andExpect(jsonPath("$.amount").value(10.00));
+
+        expireKey(userId, key);
+        CreatePaymentRequest changed = new CreatePaymentRequest(new BigDecimal("11.00"), "BRL", "Same charge");
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(changed)))
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replayed"))
+                .andExpect(jsonPath("$.amount").value(11.00));
+        assertThat(countPayments(userId)).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("completion and release match only the lease that still owns the processing row")
     void completionAndReleaseMatchTheOwningLease() {
         UUID userId = UUID.randomUUID();

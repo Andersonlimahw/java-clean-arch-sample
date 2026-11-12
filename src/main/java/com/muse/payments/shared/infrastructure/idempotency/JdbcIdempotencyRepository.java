@@ -124,7 +124,7 @@ public class JdbcIdempotencyRepository implements IdempotencyRepository {
         // SKIP LOCKED lets another instance delete a different batch without waiting.
         // The delete repeats the expiry predicate so a row reclaimed after it was selected is kept.
         String sql = """
-                WITH expired AS (
+                WITH expired AS MATERIALIZED (
                     SELECT user_id, key
                     FROM idempotency_keys
                     WHERE expires_at <= ?

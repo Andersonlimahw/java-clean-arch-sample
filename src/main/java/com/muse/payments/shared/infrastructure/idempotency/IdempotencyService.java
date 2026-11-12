@@ -1,8 +1,6 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
 import com.muse.payments.shared.domain.ConflictException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -19,8 +17,6 @@ import java.util.UUID;
 public class IdempotencyService {
 
     public static final Duration DEFAULT_TTL = Duration.ofHours(24);
-
-    private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
 
     private final IdempotencyRepository repository;
 
@@ -86,7 +82,7 @@ public class IdempotencyService {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
         int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, statusCode, responseJson);
         if (updated != 1) {
-            log.warn("Idempotency completion matched no row for user {} key {}", userId, key);
+            throw new IllegalStateException("Idempotency completion matched no row for key: " + key);
         }
     }
 
