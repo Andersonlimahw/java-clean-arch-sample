@@ -27,6 +27,8 @@ Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env
 
 `prod` without JWT PEMs refuses to start. That is intentional.
 
+A database that already applied the old `V6__payment_screening_reason` from this branch, before that script became `V7__payment_screening_reason`, will not migrate cleanly. Drop and recreate that database. `V6__payments_list_index` is the list index and must stay V6.
+
 Plugin URLs are not bound. `DATABASE_URL`, `REDIS_URL`, and `CLOUDAMQP_URL` do nothing until you copy the host, port, user, and password into the variables above. `DB_URL` must be a JDBC URL.
 
 ## Local

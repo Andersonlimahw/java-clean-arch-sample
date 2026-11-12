@@ -55,6 +55,8 @@ public class HttpFraudScreeningAdapter implements FraudScreeningPort {
 
     static final String FALLBACK_EXHAUSTED =
             "Fraud screening unavailable after retrying transient failures. Payment is under review and is not approved.";
+    static final String FALLBACK_BULKHEAD =
+            "Fraud screening bulkhead is full. The call was not sent to the provider. Payment is under review and is not approved.";
     static final String FALLBACK_CIRCUIT_OPEN =
             "Fraud screening circuit is open. Call was short-circuited without contacting the provider. Payment is under review and is not approved.";
     static final String FALLBACK_UNEXPECTED =
@@ -108,7 +110,7 @@ public class HttpFraudScreeningAdapter implements FraudScreeningPort {
             return retried.call();
         } catch (BulkheadFullException ex) {
             log.warn("Fraud screening bulkhead is full for payment {}", request.paymentId());
-            return FraudScreeningResult.underReview(FALLBACK_EXHAUSTED);
+            return FraudScreeningResult.underReview(FALLBACK_BULKHEAD);
         } catch (CallNotPermittedException ex) {
             log.warn("Fraud screening short-circuited for payment {}", request.paymentId());
             return FraudScreeningResult.underReview(FALLBACK_CIRCUIT_OPEN);
@@ -131,7 +133,7 @@ public class HttpFraudScreeningAdapter implements FraudScreeningPort {
         try {
             return restClient.post()
                     .uri(SCREENING_PATH)
-                    .header(HEADER_IDEMPOTENCY_KEY, request.providerIdempotencyKey().toString())
+                    .header(HEADER_IDEMPOTENCY_KEY, request.paymentId().toString())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(new ProviderRequest(

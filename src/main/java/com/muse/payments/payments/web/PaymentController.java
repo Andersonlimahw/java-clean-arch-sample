@@ -1,7 +1,6 @@
 package com.muse.payments.payments.web;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.payments.application.CancelPaymentCommand;
 import com.muse.payments.payments.application.CancelPaymentCommandHandler;
 import com.muse.payments.payments.application.ConfirmPaymentCommand;
@@ -14,6 +13,8 @@ import com.muse.payments.payments.application.ReviewPaymentCommand;
 import com.muse.payments.payments.application.ReviewPaymentCommandHandler;
 import com.muse.payments.payments.application.GetPaymentByIdQuery;
 import com.muse.payments.payments.application.GetPaymentByIdQueryHandler;
+import com.muse.payments.payments.application.ListHeldPaymentsQuery;
+import com.muse.payments.payments.application.ListHeldPaymentsQueryHandler;
 import com.muse.payments.payments.application.ListPaymentsQuery;
 import com.muse.payments.payments.application.ListPaymentsQueryHandler;
 import com.muse.payments.payments.application.PageResponse;
@@ -29,6 +30,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -66,7 +68,7 @@ public class PaymentController {
     private final CancelPaymentCommandHandler cancelPaymentHandler;
     private final GetPaymentByIdQueryHandler getPaymentByIdHandler;
     private final ListPaymentsQueryHandler listPaymentsHandler;
-    private final ObjectMapper objectMapper;
+    private final ListHeldPaymentsQueryHandler listHeldPaymentsHandler;
 
     public PaymentController(
             CreatePaymentUseCase createPaymentUseCase,
@@ -75,7 +77,7 @@ public class PaymentController {
             CancelPaymentCommandHandler cancelPaymentHandler,
             GetPaymentByIdQueryHandler getPaymentByIdHandler,
             ListPaymentsQueryHandler listPaymentsHandler,
-            ObjectMapper objectMapper
+            ListHeldPaymentsQueryHandler listHeldPaymentsHandler
     ) {
         this.createPaymentUseCase = Objects.requireNonNull(createPaymentUseCase);
         this.reviewPaymentHandler = Objects.requireNonNull(reviewPaymentHandler);
@@ -83,7 +85,7 @@ public class PaymentController {
         this.cancelPaymentHandler = Objects.requireNonNull(cancelPaymentHandler);
         this.getPaymentByIdHandler = Objects.requireNonNull(getPaymentByIdHandler);
         this.listPaymentsHandler = Objects.requireNonNull(listPaymentsHandler);
-        this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.listHeldPaymentsHandler = Objects.requireNonNull(listHeldPaymentsHandler);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -91,7 +93,8 @@ public class PaymentController {
     public ResponseEntity<?> createPayment(
             @RequestHeader(value = HEADER_IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @Valid @RequestBody CreatePaymentRequest request,
-            CurrentUser currentUser
+            CurrentUser currentUser,
+            HttpServletRequest httpRequest
     ) throws JsonProcessingException {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ValidationException("Idempotency-Key header is required for payment creation");
@@ -101,17 +104,37 @@ public class PaymentController {
         }
         CreatePaymentResult result = createPaymentUseCase.execute(
                 currentUser.userId(), idempotencyKey.trim(), canonicalize(request));
-        if (result instanceof CreatePaymentResult.Replayed replay) {
-            MediaType replayType = replay.status() == HttpStatus.UNPROCESSABLE_ENTITY.value()
-                    ? MediaType.APPLICATION_PROBLEM_JSON
-                    : MediaType.APPLICATION_JSON;
-            return ResponseEntity.status(replay.status())
-                    .header(HEADER_IDEMPOTENT_REPLAYED, "true")
-                    .contentType(replayType)
-                    .body(replay.body());
+        return respond(result, httpRequest);
+    }
+
+    private ResponseEntity<?> respond(CreatePaymentResult result, HttpServletRequest request) {
+        return switch (result) {
+            case CreatePaymentResult.Created created -> created(created.body(), false);
+            case CreatePaymentResult.Declined declined -> declined(request, false);
+            case CreatePaymentResult.Replayed replayed -> switch (replayed.outcome()) {
+                case CreatePaymentResult.Created created -> created(created.body(), true);
+                case CreatePaymentResult.Declined declined -> declined(request, true);
+                case CreatePaymentResult.Replayed nested -> throw new IllegalStateException("Stored replay cannot nest");
+            };
+        };
+    }
+
+    private static ResponseEntity<PaymentResponse> created(PaymentResponse body, boolean replay) {
+        ResponseEntity.BodyBuilder builder = ResponseEntity.created(URI.create("/api/v1/payments/" + body.id()))
+                .contentType(MediaType.APPLICATION_JSON);
+        if (replay) {
+            builder.header(HEADER_IDEMPOTENT_REPLAYED, "true");
         }
-        PaymentResponse created = ((CreatePaymentResult.Created) result).body();
-        return ResponseEntity.created(URI.create("/api/v1/payments/" + created.id())).body(created);
+        return builder.body(body);
+    }
+
+    private static ResponseEntity<ProblemDetail> declined(HttpServletRequest request, boolean replay) {
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        if (replay) {
+            builder.header(HEADER_IDEMPOTENT_REPLAYED, "true");
+        }
+        return builder.body(PaymentExceptionHandler.decline(request));
     }
 
     private static CreatePaymentRequest canonicalize(CreatePaymentRequest request) {
@@ -135,7 +158,7 @@ public class PaymentController {
             CurrentUser currentUser
     ) {
         PaymentResponse response = getPaymentByIdHandler.handle(
-                new GetPaymentByIdQuery(id, currentUser.userId(), currentUser.isAdmin())
+                new GetPaymentByIdQuery(id, currentUser.userId(), currentUser.isAdmin() || currentUser.hasRole("FRAUD_REVIEWER"))
         );
         return ResponseEntity.ok(response);
     }
@@ -195,6 +218,16 @@ public class PaymentController {
                 new ListPaymentsQuery(currentUser.userId(), page, size, sort)
         );
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/under-review")
+    @Operation(summary = "List payments held for fraud review. ADMIN or FRAUD_REVIEWER. Same page, size, and sort rules as the owner list.")
+    public ResponseEntity<PageResponse<PaymentResponse>> listHeldPayments(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sort
+    ) {
+        return ResponseEntity.ok(listHeldPaymentsHandler.handle(new ListHeldPaymentsQuery(page, size, sort)));
     }
 
     @PostMapping("/{id}/review")

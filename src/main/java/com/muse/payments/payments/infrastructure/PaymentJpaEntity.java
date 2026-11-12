@@ -54,6 +54,9 @@ public class PaymentJpaEntity {
     @Column(name = "screening_reason", length = 500)
     private String screeningReason;
 
+    @Column(name = "held_reason", length = 500)
+    private String heldReason;
+
     @Column(name = "reviewer_id")
     private UUID reviewerId;
 
@@ -74,6 +77,7 @@ public class PaymentJpaEntity {
             Instant updatedAt,
             Long version,
             String screeningReason,
+            String heldReason,
             UUID reviewerId,
             Instant reviewedAt
     ) {
@@ -87,6 +91,7 @@ public class PaymentJpaEntity {
         this.updatedAt = updatedAt;
         this.version = version;
         this.screeningReason = OutboundText.limit(screeningReason);
+        this.heldReason = OutboundText.limit(heldReason);
         this.reviewerId = reviewerId;
         this.reviewedAt = reviewedAt;
     }
@@ -104,6 +109,7 @@ public class PaymentJpaEntity {
                 payment.getUpdatedAt(),
                 payment.getVersion(),
                 payment.getScreeningReason(),
+                payment.getHeldReason(),
                 payment.getReviewerId(),
                 payment.getReviewedAt()
         );
@@ -120,6 +126,7 @@ public class PaymentJpaEntity {
                 this.updatedAt,
                 this.version,
                 this.screeningReason,
+                this.heldReason,
                 this.reviewerId,
                 this.reviewedAt
         );

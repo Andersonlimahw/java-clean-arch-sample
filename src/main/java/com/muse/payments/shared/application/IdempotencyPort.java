@@ -13,7 +13,7 @@ public interface IdempotencyPort {
 
     IdempotencyDecision acquireProcessing(UUID userId, String key, String payloadJson);
 
-    void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, int statusCode, String responseJson);
+    void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, String responseJson);
 
     void releaseProcessing(UUID userId, String key, String payloadJson, UUID leaseId);
 }

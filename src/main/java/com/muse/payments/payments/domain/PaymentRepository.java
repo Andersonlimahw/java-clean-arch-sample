@@ -13,4 +13,8 @@ public interface PaymentRepository {
     List<Payment> findByUserId(UUID userId, int page, int size, PaymentSort sort);
 
     long countByUserId(UUID userId);
+
+    List<Payment> findByStatus(PaymentStatus status, int page, int size, PaymentSort sort);
+
+    long countByStatus(PaymentStatus status);
 }

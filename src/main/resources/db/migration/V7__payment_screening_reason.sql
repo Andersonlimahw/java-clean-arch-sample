@@ -2,6 +2,9 @@ ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS screening_reason VARCHAR(500);
 
 ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS held_reason VARCHAR(500);
+
+ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS reviewer_id UUID;
 
 ALTER TABLE payments

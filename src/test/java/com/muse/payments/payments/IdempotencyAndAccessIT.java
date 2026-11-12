@@ -340,9 +340,9 @@ class IdempotencyAndAccessIT extends TestcontainersBase {
         UUID userId = UUID.randomUUID();
         String key = "lease-" + UUID.randomUUID();
         String hash = IdempotencyService.computeHash("{\"amount\":1}");
-        UUID first = idempotencyRepository.tryInsertProcessing(userId, key, hash, Duration.ofMinutes(5)).orElseThrow();
+        UUID first = idempotencyRepository.tryInsertProcessing(userId, key, hash, Duration.ofMinutes(5)).orElseThrow().leaseId();
         expireKey(userId, key);
-        UUID second = idempotencyRepository.tryInsertProcessing(userId, key, hash, Duration.ofMinutes(5)).orElseThrow();
+        UUID second = idempotencyRepository.tryInsertProcessing(userId, key, hash, Duration.ofMinutes(5)).orElseThrow().leaseId();
 
         assertThat(second).isNotEqualTo(first);
         assertThat(idempotencyRepository.markCompleted(userId, key, hash, first, 201, "{\"id\":\"old\"}")).isZero();

@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Timeout(value = 4, unit = TimeUnit.MINUTES)
-class MigrationJobIT extends TestcontainersBase {
+class MigrationJobIT extends SharedContainers {
 
     @Test
     @DisplayName("Migration mode applies Flyway and the process exits 0 even if Flyway was disabled externally")

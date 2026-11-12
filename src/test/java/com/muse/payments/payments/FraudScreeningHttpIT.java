@@ -26,6 +26,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -126,6 +127,44 @@ class FraudScreeningHttpIT extends TestcontainersBase {
                         .param("decision", "REJECT"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
+    @DisplayName("FRAUD_REVIEWER can read a held payment by id, list held payments, and approve one they do not own")
+    void fraudReviewerCanSeeAndReleaseAHeldPayment() throws Exception {
+        fraudScreening.setResult(FraudScreeningResult.underReview("provider down"));
+        UUID ownerId = UUID.randomUUID();
+        UUID reviewerId = UUID.randomUUID();
+        String owner = token(ownerId, "USER");
+        String reviewer = token(reviewerId, "FRAUD_REVIEWER");
+        CreatePaymentRequest request = new CreatePaymentRequest(new BigDecimal("14.00"), "BRL", "Queue");
+        String id = objectMapper.readTree(create(owner, "queue-" + UUID.randomUUID(), request)
+                .getResponse().getContentAsString()).get("id").asText();
+
+        mockMvc.perform(get("/api/v1/payments/" + id)
+                        .header("Authorization", "Bearer " + reviewer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+
+        mockMvc.perform(get("/api/v1/payments/under-review")
+                        .header("Authorization", "Bearer " + reviewer)
+                        .param("page", "0")
+                        .param("size", "20")
+                        .param("sort", "createdAt,desc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].id", org.hamcrest.Matchers.hasItem(id)));
+
+        mockMvc.perform(post("/api/v1/payments/" + id + "/review")
+                        .header("Authorization", "Bearer " + reviewer)
+                        .param("decision", "APPROVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        String heldReason = jdbcTemplate.queryForObject(
+                "select held_reason from payments where id = ?",
+                String.class,
+                UUID.fromString(id));
+        assertThat(heldReason).isEqualTo("provider down");
     }
 
     @Test

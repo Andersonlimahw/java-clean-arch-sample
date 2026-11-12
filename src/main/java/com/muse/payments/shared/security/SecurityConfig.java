@@ -62,6 +62,8 @@ public class SecurityConfig {
                                 "/swagger-ui.html"
                         ).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/*/review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/under-review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/*").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")
                         .requestMatchers("/api/v1/payments", "/api/v1/payments/**").hasAnyRole("USER", "ADMIN")
                         .anyRequest().authenticated()
                 )

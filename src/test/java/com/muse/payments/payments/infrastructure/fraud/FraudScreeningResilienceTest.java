@@ -229,15 +229,14 @@ class FraudScreeningResilienceTest {
         return new FraudScreeningRequest(
                 paymentId,
                 UUID.randomUUID(),
-                Money.of(new BigDecimal("10.00"), "BRL"),
-                paymentId);
+                Money.of(new BigDecimal("10.00"), "BRL"));
     }
 
     private static void verifyRequests(FraudScreeningRequest request, int count) {
         SERVER.verify(
                 exactly(count),
                 postRequestedFor(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
-                        .withHeader(HttpFraudScreeningAdapter.HEADER_IDEMPOTENCY_KEY, equalTo(request.providerIdempotencyKey().toString()))
+                        .withHeader(HttpFraudScreeningAdapter.HEADER_IDEMPOTENCY_KEY, equalTo(request.paymentId().toString()))
                         .withRequestBody(containing(request.paymentId().toString())));
     }
 }

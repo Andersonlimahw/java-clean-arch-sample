@@ -2,6 +2,7 @@ package com.muse.payments.payments.domain;
 
 import com.muse.payments.shared.domain.AggregateRoot;
 import com.muse.payments.shared.domain.ConflictException;
+import com.muse.payments.shared.domain.ForbiddenException;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -18,6 +19,7 @@ public class Payment extends AggregateRoot<UUID> {
     private Instant updatedAt;
     private Long version;
     private String screeningReason;
+    private final String heldReason;
     private UUID reviewerId;
     private Instant reviewedAt;
 
@@ -31,6 +33,7 @@ public class Payment extends AggregateRoot<UUID> {
             Instant updatedAt,
             Long version,
             String screeningReason,
+            String heldReason,
             UUID reviewerId,
             Instant reviewedAt
     ) {
@@ -43,6 +46,7 @@ public class Payment extends AggregateRoot<UUID> {
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
         this.version = version;
         this.screeningReason = screeningReason;
+        this.heldReason = heldReason;
         this.reviewerId = reviewerId;
         this.reviewedAt = reviewedAt;
     }
@@ -65,14 +69,14 @@ public class Payment extends AggregateRoot<UUID> {
 
     private static Payment cleared(UUID id, UUID userId, Money money, String description) {
         Instant now = Instant.now();
-        Payment payment = new Payment(id, userId, money, description, PaymentStatus.PENDING, now, now, null, null, null, null);
+        Payment payment = new Payment(id, userId, money, description, PaymentStatus.PENDING, now, now, null, null, null, null, null);
         payment.registerEvent(new PaymentCreatedEvent(id, userId, money.amount(), money.currency(), description));
         return payment;
     }
 
     private static Payment held(UUID id, UUID userId, Money money, String description, String reason) {
         Instant now = Instant.now();
-        Payment payment = new Payment(id, userId, money, description, PaymentStatus.UNDER_REVIEW, now, now, null, reason, null, null);
+        Payment payment = new Payment(id, userId, money, description, PaymentStatus.UNDER_REVIEW, now, now, null, reason, reason, null, null);
         payment.registerEvent(new PaymentHeldForReviewEvent(
                 id, userId, money.amount(), money.currency(), description, reason));
         return payment;
@@ -88,15 +92,16 @@ public class Payment extends AggregateRoot<UUID> {
             Instant updatedAt,
             Long version,
             String screeningReason,
+            String heldReason,
             UUID reviewerId,
             Instant reviewedAt
     ) {
-        return new Payment(id, userId, money, description, status, createdAt, updatedAt, version, screeningReason, reviewerId, reviewedAt);
+        return new Payment(id, userId, money, description, status, createdAt, updatedAt, version, screeningReason, heldReason, reviewerId, reviewedAt);
     }
 
     /**
      * A reviewer who does not own the payment releases it to {@link PaymentStatus#PENDING}.
-     * The stored screening reason is cleared because the payment is no longer held.
+     * The active screening reason is cleared. {@code heldReason} stays for audit.
      */
     public void releaseFromReview(UUID reviewerId, Instant reviewedAt) {
         requireHeld(reviewerId);
@@ -126,7 +131,7 @@ public class Payment extends AggregateRoot<UUID> {
             throw new ConflictException("Reviewer is required");
         }
         if (isOwnedBy(reviewerId)) {
-            throw new ConflictException("The payment owner cannot review their own payment");
+            throw new ForbiddenException("The payment owner cannot review their own payment");
         }
     }
 
@@ -187,6 +192,10 @@ public class Payment extends AggregateRoot<UUID> {
 
     public String getScreeningReason() {
         return screeningReason;
+    }
+
+    public String getHeldReason() {
+        return heldReason;
     }
 
     public UUID getReviewerId() {

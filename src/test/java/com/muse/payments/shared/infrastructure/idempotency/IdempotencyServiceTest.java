@@ -39,7 +39,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
 
         UUID leaseId = UUID.randomUUID();
-        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.of(leaseId));
+        when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any())).thenReturn(Optional.of(new ProcessingLease(leaseId, Instant.EPOCH)));
 
         IdempotencyDecision decision = service.evaluateOrAcquire(userId, key, payload, Duration.ofHours(1));
 
@@ -110,7 +110,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
 
         when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any()))
-                .thenReturn(Optional.empty(), Optional.of(UUID.randomUUID()));
+                .thenReturn(Optional.empty(), Optional.of(new ProcessingLease(UUID.randomUUID(), Instant.EPOCH)));
         when(repository.find(userId, key)).thenReturn(Optional.of(expiredRecord(
                 key, userId, "different-hash", IdempotencyRecord.STATUS_COMPLETED, 201, "{\"id\":\"old\"}"
         )));
@@ -129,7 +129,7 @@ class IdempotencyServiceTest {
         String payload = "{\"amount\":100}";
 
         when(repository.tryInsertProcessing(eq(userId), eq(key), any(), any()))
-                .thenReturn(Optional.empty(), Optional.of(UUID.randomUUID()));
+                .thenReturn(Optional.empty(), Optional.of(new ProcessingLease(UUID.randomUUID(), Instant.EPOCH)));
         when(repository.find(userId, key)).thenReturn(Optional.of(expiredRecord(
                 key, userId, "hash", IdempotencyRecord.STATUS_PROCESSING, null, null
         )));
@@ -189,12 +189,12 @@ class IdempotencyServiceTest {
 
         String payload = "{\"amount\":100}";
         UUID leaseId = UUID.randomUUID();
-        when(repository.markCompleted(userId, key, IdempotencyService.computeHash(payload), leaseId, 201, "{\"id\":\"abc\"}"))
+        when(repository.markCompleted(userId, key, IdempotencyService.computeHash(payload), leaseId, null, "{\"id\":\"abc\"}"))
                 .thenReturn(1);
 
-        service.saveCompleted(userId, key, payload, leaseId, 201, "{\"id\":\"abc\"}");
+        service.saveCompleted(userId, key, payload, leaseId, "{\"id\":\"abc\"}");
 
-        verify(repository).markCompleted(userId, key, IdempotencyService.computeHash(payload), leaseId, 201, "{\"id\":\"abc\"}");
+        verify(repository).markCompleted(userId, key, IdempotencyService.computeHash(payload), leaseId, null, "{\"id\":\"abc\"}");
     }
 
     @Test
@@ -204,9 +204,9 @@ class IdempotencyServiceTest {
         String key = "lost-lease";
         String payload = "{\"amount\":100}";
         UUID leaseId = UUID.randomUUID();
-        when(repository.markCompleted(any(), any(), any(), any(), eq(201), any())).thenReturn(0);
+        when(repository.markCompleted(any(), any(), any(), any(), any(), any())).thenReturn(0);
 
-        assertThatThrownBy(() -> service.saveCompleted(userId, key, payload, leaseId, 201, "{\"id\":\"abc\"}"))
+        assertThatThrownBy(() -> service.saveCompleted(userId, key, payload, leaseId, "{\"id\":\"abc\"}"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("matched no row");
     }

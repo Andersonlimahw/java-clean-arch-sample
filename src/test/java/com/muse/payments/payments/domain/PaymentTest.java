@@ -114,6 +114,7 @@ class PaymentTest {
         released.releaseFromReview(reviewer, Instant.now());
         assertThat(released.getStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(released.getScreeningReason()).isNull();
+        assertThat(released.getHeldReason()).isEqualTo("down");
         assertThat(released.getReviewerId()).isEqualTo(reviewer);
         assertThat(released.pullDomainEvents()).singleElement().isInstanceOf(PaymentCreatedEvent.class);
 

@@ -73,6 +73,12 @@ class ArchitectureTest {
             .as("Application must not import Resilience4j or an HTTP client; resilience stays in infrastructure");
 
     @ArchTest
+    static final ArchRule payments_application_should_not_depend_on_spring_security = noClasses()
+            .that().resideInAPackage("com.muse.payments.payments.application..")
+            .should().dependOnClassesThat().resideInAPackage("org.springframework.security..")
+            .as("Payments application authorizes with the URL matcher and domain rules, not Spring Security");
+
+    @ArchTest
     static final ArchRule application_should_not_depend_on_infrastructure = noClasses()
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAPackage("..infrastructure..")

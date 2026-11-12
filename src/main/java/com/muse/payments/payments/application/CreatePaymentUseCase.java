@@ -3,7 +3,6 @@ package com.muse.payments.payments.application;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.payments.domain.Money;
-import com.muse.payments.payments.domain.PaymentDeclinedException;
 import com.muse.payments.shared.application.IdempotencyDecision;
 import com.muse.payments.shared.application.IdempotencyPort;
 import org.slf4j.Logger;
@@ -43,14 +42,13 @@ public class CreatePaymentUseCase {
         String payloadJson = objectMapper.writeValueAsString(canonical);
         IdempotencyDecision decision = idempotencyPort.acquireProcessing(userId, idempotencyKey, payloadJson);
         if (decision.isReplayed()) {
-            return new CreatePaymentResult.Replayed(decision.responseCode(), decision.responseBody());
+            return new CreatePaymentResult.Replayed(StoredCreateOutcome.read(objectMapper, decision.responseBody()));
         }
-        UUID paymentId = UUID.randomUUID();
-        UUID providerIdempotencyKey = PaymentIds.forIdempotencyKey(userId, idempotencyKey);
+        UUID paymentId = PaymentIds.forLease(userId, idempotencyKey, decision.acquiredAt());
         try {
             Money money = Money.of(canonical.amount(), canonical.currency());
             FraudScreeningResult screening = fraudScreeningPort.screen(
-                    new FraudScreeningRequest(paymentId, userId, money, providerIdempotencyKey));
+                    new FraudScreeningRequest(paymentId, userId, money));
             if (screening.outcome() == FraudScreeningOutcome.DECLINED) {
                 log.info("Fraud screening declined payment {} for user {}: {}", paymentId, userId, screening.reason());
                 idempotencyPort.saveCompleted(
@@ -58,10 +56,9 @@ public class CreatePaymentUseCase {
                         idempotencyKey,
                         payloadJson,
                         decision.leaseId(),
-                        422,
-                        declinedBody()
+                        StoredCreateOutcome.declined(objectMapper)
                 );
-                throw new PaymentDeclinedException();
+                return new CreatePaymentResult.Declined();
             }
             if (screening.outcome() == FraudScreeningOutcome.UNDER_REVIEW) {
                 log.info("Fraud screening held payment {} for user {}: {}", paymentId, userId, screening.reason());
@@ -76,8 +73,7 @@ public class CreatePaymentUseCase {
                             idempotencyKey,
                             payloadJson,
                             decision.leaseId(),
-                            201,
-                            objectMapper.writeValueAsString(body)
+                            StoredCreateOutcome.created(objectMapper, body)
                     );
                 } catch (JsonProcessingException ex) {
                     throw new IllegalStateException("Could not store the idempotent payment response", ex);
@@ -85,8 +81,6 @@ public class CreatePaymentUseCase {
                 return body;
             });
             return new CreatePaymentResult.Created(response);
-        } catch (PaymentDeclinedException ex) {
-            throw ex;
         } catch (RuntimeException ex) {
             try {
                 idempotencyPort.releaseProcessing(userId, idempotencyKey, payloadJson, decision.leaseId());
@@ -95,11 +89,5 @@ public class CreatePaymentUseCase {
             }
             throw ex;
         }
-    }
-
-    private static String declinedBody() {
-        return """
-                {"type":"urn:problem-type:422","title":"Payment Declined","status":422,"detail":"%s"}
-                """.formatted(PaymentDeclinedException.PUBLIC_MESSAGE).trim();
     }
 }

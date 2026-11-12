@@ -27,8 +27,9 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER`, `ROLE_ADM
 |---|---|---|
 | `POST /api/v1/auth/**` | Public | — |
 | `POST /api/v1/payments` | `USER` or `ADMIN` | The caller owns the payment that is created |
-| `GET /api/v1/payments/{id}` | `USER` or `ADMIN` | Owner, or any payment when the caller is `ADMIN`. Another user's payment is **404** |
+| `GET /api/v1/payments/{id}` | `USER`, `ADMIN`, or `FRAUD_REVIEWER` | Owner, or any payment when the caller is `ADMIN` or `FRAUD_REVIEWER`. Another user's payment is **404** for `USER` |
 | `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN`. `page`/`size`/`sort` outside the documented bounds are **400** (they used to be clamped) |
+| `GET /api/v1/payments/under-review` | `ADMIN` or `FRAUD_REVIEWER` | Payments in `UNDER_REVIEW`, any owner. Same `page`/`size`/`sort` rules as the owner list |
 | `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. `PENDING` only. `UNDER_REVIEW` is **409**. Another user's payment is **404** |
 | `POST /api/v1/payments/{id}/review?decision=APPROVE\|REJECT` | `ADMIN` or `FRAUD_REVIEWER` | Not the owner. `UNDER_REVIEW` only. `APPROVE` makes it `PENDING` and clears the screening reason. `REJECT` cancels it with the reviewer's reason. The owner, including an `ADMIN` who created the payment, is **403**. |
 | `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |

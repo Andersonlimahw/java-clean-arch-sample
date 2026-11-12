@@ -1,7 +1,6 @@
 package com.muse.payments.shared.infrastructure.observability;
 
 import com.muse.payments.TestcontainersBase;
-import com.muse.payments.payments.application.CreatePaymentCommand;
 import com.muse.payments.payments.application.CreatePaymentRequest;
 import com.muse.payments.payments.application.CreatePaymentResult;
 import com.muse.payments.payments.application.CreatePaymentUseCase;

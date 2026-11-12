@@ -99,7 +99,7 @@ class FraudScreeningOpenCircuitTest {
 
     private static FraudScreeningRequest request() {
         UUID paymentId = UUID.randomUUID();
-        return new FraudScreeningRequest(paymentId, UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), paymentId);
+        return new FraudScreeningRequest(paymentId, UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"));
     }
 
     private static void verify(FraudScreeningRequest request, int count) {

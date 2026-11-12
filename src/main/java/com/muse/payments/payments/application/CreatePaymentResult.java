@@ -5,6 +5,9 @@ public sealed interface CreatePaymentResult {
     record Created(PaymentResponse body) implements CreatePaymentResult {
     }
 
-    record Replayed(int status, String body) implements CreatePaymentResult {
+    record Declined() implements CreatePaymentResult {
+    }
+
+    record Replayed(CreatePaymentResult outcome) implements CreatePaymentResult {
     }
 }

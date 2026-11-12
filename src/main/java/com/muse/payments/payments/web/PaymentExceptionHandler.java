@@ -11,9 +11,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class PaymentExceptionHandler {
 
+    public static ProblemDetail decline(HttpServletRequest request) {
+        return GlobalExceptionHandler.createProblemDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "Payment Declined",
+                PaymentDeclinedException.PUBLIC_MESSAGE,
+                request);
+    }
+
     @ExceptionHandler(PaymentDeclinedException.class)
     public ProblemDetail handleDeclined(PaymentDeclinedException ex, HttpServletRequest request) {
-        return GlobalExceptionHandler.createProblemDetail(
-                HttpStatus.UNPROCESSABLE_ENTITY, "Payment Declined", ex.getMessage(), request);
+        return decline(request);
     }
 }

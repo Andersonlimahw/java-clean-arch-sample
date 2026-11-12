@@ -1,5 +1,6 @@
 package com.muse.payments.payments.infrastructure;
 
+import com.muse.payments.payments.domain.PaymentStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,4 +12,8 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentJpaEntity, UU
     List<PaymentJpaEntity> findByUserId(UUID userId, Pageable pageable);
 
     long countByUserId(UUID userId);
+
+    List<PaymentJpaEntity> findByStatus(PaymentStatus status, Pageable pageable);
+
+    long countByStatus(PaymentStatus status);
 }

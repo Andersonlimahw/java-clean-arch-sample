@@ -6,8 +6,6 @@ import com.muse.payments.shared.application.CommandHandler;
 import com.muse.payments.shared.application.IntegrationEvent;
 import com.muse.payments.shared.application.OutboxPort;
 import com.muse.payments.shared.domain.EntityNotFoundException;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,14 +31,10 @@ public class ReviewPaymentCommandHandler implements CommandHandler<ReviewPayment
 
     @Override
     @Transactional
-    @PreAuthorize("hasAnyRole('ADMIN', 'FRAUD_REVIEWER')")
     public PaymentResponse handle(ReviewPaymentCommand command) {
         Objects.requireNonNull(command, "command must not be null");
         Payment payment = paymentRepository.findById(command.paymentId())
                 .orElseThrow(() -> new EntityNotFoundException("Payment not found with id: " + command.paymentId()));
-        if (payment.isOwnedBy(command.userId())) {
-            throw new AccessDeniedException("The payment owner cannot review their own payment");
-        }
         Instant reviewedAt = Instant.now();
         if (command.decision() == ReviewDecision.APPROVE) {
             payment.releaseFromReview(command.userId(), reviewedAt);

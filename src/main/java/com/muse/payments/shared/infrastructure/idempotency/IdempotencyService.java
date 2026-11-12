@@ -62,9 +62,9 @@ public class IdempotencyService implements IdempotencyPort {
         Duration effectiveTtl = ttl != null ? ttl : DEFAULT_TTL;
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            Optional<UUID> leaseId = repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl);
-            if (leaseId.isPresent()) {
-                return IdempotencyDecision.proceed(leaseId.get());
+            Optional<ProcessingLease> lease = repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl);
+            if (lease.isPresent()) {
+                return IdempotencyDecision.proceed(lease.get().leaseId(), lease.get().createdAt());
             }
 
             Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
@@ -96,9 +96,9 @@ public class IdempotencyService implements IdempotencyPort {
     }
 
     @Transactional
-    public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, int statusCode, String responseJson) {
+    public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, String responseJson) {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
-        int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, statusCode, responseJson);
+        int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, null, responseJson);
         if (updated != 1) {
             throw new IllegalStateException("Idempotency completion matched no row for key: " + key);
         }

@@ -12,20 +12,16 @@ import io.github.resilience4j.timelimiter.TimeLimiter;
 import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.boot.ApplicationRunner;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.convert.DurationStyle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
@@ -33,8 +29,6 @@ import java.util.concurrent.Executors;
 
 @Configuration
 public class FraudScreeningConfiguration {
-
-    private static final Logger log = LoggerFactory.getLogger(FraudScreeningConfiguration.class);
 
     @Bean(destroyMethod = "close")
     @ConditionalOnProperty(name = "app.fraud-screening.mode", havingValue = "http", matchIfMissing = true)
@@ -54,7 +48,8 @@ public class FraudScreeningConfiguration {
             RetryRegistry retryRegistry,
             TimeLimiterRegistry timeLimiterRegistry,
             MeterRegistry meterRegistry,
-            Environment environment
+            Environment environment,
+            @Value("${app.idempotency.processing-ttl:2m}") Duration processingTtl
     ) {
         boolean prod = Arrays.stream(environment.getActiveProfiles()).anyMatch("prod"::equals);
         if (prod && !"https".equalsIgnoreCase(properties.baseUrl().getScheme())) {
@@ -85,6 +80,21 @@ public class FraudScreeningConfiguration {
                             + ") must be greater than the time limiter timeout (" + timeout
                             + ") so a cancelled attempt is released by interrupt");
         }
+        Duration budget = ScreeningBudget.of(
+                properties.readTimeout(),
+                maxAttempts,
+                wait(environment),
+                flag(environment, "enable-exponential-backoff"),
+                number(environment, "exponential-backoff-multiplier", 2d),
+                flag(environment, "enable-randomized-wait"),
+                number(environment, "randomized-wait-factor", 0.5d)
+        );
+        if (processingTtl.compareTo(budget) <= 0) {
+            throw new IllegalStateException(
+                    "app.idempotency.processing-ttl (" + processingTtl
+                            + ") must be greater than the fraud screening budget (" + budget
+                            + "): read timeout times attempts, plus the maximum backoff");
+        }
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .version(HttpClient.Version.HTTP_1_1)
@@ -110,22 +120,25 @@ public class FraudScreeningConfiguration {
                 meterRegistry);
     }
 
-    @Bean
-    @ConditionalOnProperty(name = "app.fraud-screening.mode", havingValue = "http", matchIfMissing = true)
-    ApplicationRunner fraudScreeningWarmup(FraudScreeningProperties properties) {
-        return args -> {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(properties.connectTimeout())
-                    .version(HttpClient.Version.HTTP_1_1)
-                    .build();
-            HttpRequest request = HttpRequest.newBuilder(URI.create(properties.baseUrl().toString()))
-                    .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                    .timeout(properties.connectTimeout())
-                    .build();
-            client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
-                    .whenComplete((response, error) -> log.info(
-                            "Fraud screening client warmup finished for {}", properties.baseUrl()));
-        };
+    private static Duration wait(Environment environment) {
+        String raw = environment.getProperty(
+                "resilience4j.retry.instances." + HttpFraudScreeningAdapter.INSTANCE_NAME + ".wait-duration",
+                "500ms");
+        return DurationStyle.detectAndParse(raw);
+    }
+
+    private static boolean flag(Environment environment, String name) {
+        return environment.getProperty(
+                "resilience4j.retry.instances." + HttpFraudScreeningAdapter.INSTANCE_NAME + "." + name,
+                Boolean.class,
+                false);
+    }
+
+    private static double number(Environment environment, String name, double fallback) {
+        return environment.getProperty(
+                "resilience4j.retry.instances." + HttpFraudScreeningAdapter.INSTANCE_NAME + "." + name,
+                Double.class,
+                fallback);
     }
 
     private static IllegalStateException missing(String kind) {

@@ -5,9 +5,9 @@ import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentStatus;
 import com.muse.payments.shared.application.IntegrationEvent;
 import com.muse.payments.shared.application.OutboxPort;
+import com.muse.payments.shared.domain.ForbiddenException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -34,6 +34,7 @@ class ReviewPaymentCommandHandlerTest {
         assertThat(payment.getReviewerId()).isEqualTo(reviewer);
         assertThat(payment.getReviewedAt()).isNotNull();
         assertThat(payment.getScreeningReason()).isNull();
+        assertThat(payment.getHeldReason()).isEqualTo("down");
     }
 
     @Test
@@ -45,7 +46,7 @@ class ReviewPaymentCommandHandlerTest {
         ReviewPaymentCommandHandler handler = handler(payment);
 
         assertThatThrownBy(() -> handler.handle(new ReviewPaymentCommand(payment.getId(), owner, ReviewDecision.APPROVE)))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(ForbiddenException.class);
     }
 
     private static ReviewPaymentCommandHandler handler(Payment payment) {
@@ -68,6 +69,17 @@ class ReviewPaymentCommandHandlerTest {
 
             @Override
             public long countByUserId(UUID userId) {
+                return 0;
+            }
+
+            @Override
+            public java.util.List<Payment> findByStatus(
+                    com.muse.payments.payments.domain.PaymentStatus status, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
+                return java.util.List.of();
+            }
+
+            @Override
+            public long countByStatus(com.muse.payments.payments.domain.PaymentStatus status) {
                 return 0;
             }
         };
