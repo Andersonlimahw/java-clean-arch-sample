@@ -1,0 +1,11 @@
+# Non-local profile: ECS JSON logs for Kibana / a log collector.
+# Plain text stays the default for local and test.
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}

@@ -1,0 +1,76 @@
+# Overlay for local tracing and metrics.
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+# Elasticsearch and Kibana are behind the "logs" profile (about 1 GB heap):
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile logs up -d
+services:
+  app:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.114.0
+    container_name: payments-otel-collector
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./deploy/observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: payments-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: payments-prometheus
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: payments-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    profiles: ["logs"]
+    container_name: payments-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9200:9200"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    profiles: ["logs"]
+    container_name: payments-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      - elasticsearch
