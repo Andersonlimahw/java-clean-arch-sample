@@ -1,8 +1,9 @@
 package com.muse.payments.shared.infrastructure.observability;
 
 import com.muse.payments.TestcontainersBase;
-import com.muse.payments.payments.application.CreatePaymentCommand;
-import com.muse.payments.payments.application.CreatePaymentCommandHandler;
+import com.muse.payments.payments.application.CreatePaymentRequest;
+import com.muse.payments.payments.application.CreatePaymentResult;
+import com.muse.payments.payments.application.CreatePaymentUseCase;
 import com.muse.payments.payments.application.PaymentResponse;
 import com.muse.payments.shared.infrastructure.OutboxEventEntity;
 import com.muse.payments.shared.infrastructure.OutboxJpaRepository;
@@ -65,7 +66,7 @@ class ObservabilityMetricsIT extends TestcontainersBase {
     private RabbitTemplate rabbitTemplate;
 
     @Autowired
-    private CreatePaymentCommandHandler createPaymentCommandHandler;
+    private CreatePaymentUseCase createPaymentUseCase;
 
     @Autowired
     private OutboxRelayService outboxRelayService;
@@ -144,7 +145,7 @@ class ObservabilityMetricsIT extends TestcontainersBase {
 
     @Test
     @DisplayName("The request trace reaches the consumer after the relay waits for a publisher confirm")
-    void requestTraceContinuesAcrossTheOutbox() {
+    void requestTraceContinuesAcrossTheOutbox() throws Exception {
         Span span = tracer.nextSpan().name("http-post-payment").start();
         String traceId = span.context().traceId();
         String spanId = span.context().spanId();
@@ -153,12 +154,11 @@ class ObservabilityMetricsIT extends TestcontainersBase {
 
         PaymentResponse response;
         try (Tracer.SpanInScope scope = tracer.withSpan(span)) {
-            response = createPaymentCommandHandler.handle(new CreatePaymentCommand(
+            CreatePaymentResult result = createPaymentUseCase.execute(
                     UUID.randomUUID(),
-                    new BigDecimal("10.00"),
-                    "BRL",
-                    "trace probe"
-            ));
+                    "trace-" + UUID.randomUUID(),
+                    new CreatePaymentRequest(new BigDecimal("10.00"), "BRL", "trace probe"));
+            response = ((CreatePaymentResult.Created) result).body();
         } finally {
             span.end();
         }

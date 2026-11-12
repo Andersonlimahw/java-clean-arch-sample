@@ -11,3 +11,5 @@ data:
   ACCESS_TOKEN_TTL: "PT15M"
   REFRESH_TOKEN_TTL: "P7D"
   SPRING_FLYWAY_ENABLED: "false"
+  # FRAUD_SCREENING_BASE_URL is required in prod and is not defaulted here.
+  # Set it on payments-secret to the provider https URL.

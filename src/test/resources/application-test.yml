@@ -24,8 +24,41 @@ app:
   outbox:
     scheduling:
       enabled: false
+  fraud-screening:
+    connect-timeout: 200ms
+    read-timeout: 8s
   jwt:
     issuer: https://test.payments.muse.com
     audience: payments-api-test
     access-token-ttl: PT5M
     refresh-token-ttl: P1D
+
+# Fast and deterministic. The window stays larger than max-attempts so one screened call
+# does not open the circuit while retries are still running. The open-circuit test overrides this.
+resilience4j:
+  circuitbreaker:
+    instances:
+      fraudScreening:
+        sliding-window-size: 20
+        minimum-number-of-calls: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        automatic-transition-from-open-to-half-open-enabled: false
+  bulkhead:
+    instances:
+      fraudScreening:
+        max-concurrent-calls: 4
+        max-wait-duration: 0
+  retry:
+    instances:
+      fraudScreening:
+        max-attempts: 3
+        wait-duration: 1ms
+        enable-exponential-backoff: false
+        enable-randomized-wait: false
+  timelimiter:
+    instances:
+      fraudScreening:
+        # Above a cold JDK HTTP client on CI. The slow-provider test delays longer than this.
+        timeout-duration: 1s
+        cancel-running-future: true

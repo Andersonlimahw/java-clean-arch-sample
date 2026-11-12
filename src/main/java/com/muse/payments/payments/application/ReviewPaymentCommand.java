@@ -2,13 +2,11 @@ package com.muse.payments.payments.application;
 
 import com.muse.payments.shared.application.Command;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
-public record CreatePaymentCommand(
+public record ReviewPaymentCommand(
+        UUID paymentId,
         UUID userId,
-        BigDecimal amount,
-        String currency,
-        String description
+        ReviewDecision decision
 ) implements Command<PaymentResponse> {
 }

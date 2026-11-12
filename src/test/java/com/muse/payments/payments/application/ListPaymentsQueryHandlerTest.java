@@ -138,7 +138,11 @@ class ListPaymentsQueryHandlerTest {
                 PaymentStatus.PENDING,
                 createdAt,
                 createdAt,
-                0L
+                0L,
+                null,
+                null,
+                null,
+                null
         );
     }
 
@@ -167,6 +171,14 @@ class ListPaymentsQueryHandlerTest {
         }
 
         @Override
+        public List<Payment> findByStatus(PaymentStatus status, int page, int size, PaymentSort sort) {
+            return List.of();
+        }
+
+        public long countByStatus(PaymentStatus status) {
+            return 0;
+        }
+
         public long countByUserId(UUID userId) {
             return total;
         }

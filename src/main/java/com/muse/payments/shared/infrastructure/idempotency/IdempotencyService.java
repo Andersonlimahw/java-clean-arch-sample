@@ -1,7 +1,12 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
+import com.muse.payments.shared.application.IdempotencyDecision;
+import com.muse.payments.shared.application.IdempotencyPort;
 import com.muse.payments.shared.domain.ConflictException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -14,14 +19,25 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
-public class IdempotencyService {
+public class IdempotencyService implements IdempotencyPort {
 
-    public static final Duration DEFAULT_TTL = Duration.ofHours(24);
+    public static final Duration DEFAULT_TTL = IdempotencyPort.COMPLETED_TTL;
 
     private final IdempotencyRepository repository;
+    private final Duration processingTtl;
 
-    public IdempotencyService(IdempotencyRepository repository) {
+    public IdempotencyService(
+            IdempotencyRepository repository,
+            @Value("${app.idempotency.processing-ttl:2m}") Duration processingTtl
+    ) {
         this.repository = Objects.requireNonNull(repository);
+        this.processingTtl = processingTtl;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public IdempotencyDecision acquireProcessing(UUID userId, String key, String payloadJson) {
+        return evaluateOrAcquire(userId, key, payloadJson, processingTtl);
     }
 
     public static String computeHash(String payload) {
@@ -37,6 +53,7 @@ public class IdempotencyService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public IdempotencyDecision evaluateOrAcquire(UUID userId, String key, String payloadJson, Duration ttl) {
         Objects.requireNonNull(userId, "userId must not be null");
         Objects.requireNonNull(key, "key must not be null");
@@ -45,9 +62,9 @@ public class IdempotencyService {
         Duration effectiveTtl = ttl != null ? ttl : DEFAULT_TTL;
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            Optional<UUID> leaseId = repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl);
-            if (leaseId.isPresent()) {
-                return IdempotencyDecision.proceed(leaseId.get());
+            Optional<ProcessingLease> lease = repository.tryInsertProcessing(userId, key, requestHash, effectiveTtl);
+            if (lease.isPresent()) {
+                return IdempotencyDecision.proceed(lease.get().leaseId(), lease.get().createdAt());
             }
 
             Optional<IdempotencyRecord> optionalRecord = repository.find(userId, key);
@@ -78,14 +95,16 @@ public class IdempotencyService {
         throw new ConflictException("Idempotency key cannot be reused while it is unexpired: " + key);
     }
 
-    public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, int statusCode, String responseJson) {
+    @Transactional
+    public void saveCompleted(UUID userId, String key, String payloadJson, UUID leaseId, String responseJson) {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
-        int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, statusCode, responseJson);
+        int updated = repository.markCompleted(userId, key, computeHash(payloadJson), leaseId, null, responseJson);
         if (updated != 1) {
             throw new IllegalStateException("Idempotency completion matched no row for key: " + key);
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void releaseProcessing(UUID userId, String key, String payloadJson, UUID leaseId) {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
         repository.deleteProcessing(userId, key, computeHash(payloadJson), leaseId);

@@ -15,3 +15,4 @@ Operational behavior that these decisions refer to is in [../architecture.md](..
 | [0009](0009-jwt-vs-external-idp.md) | First-party RS256 JWT | Accepted |
 | [0010](0010-compose-vs-kubernetes.md) | Compose for local, Kubernetes for production shape | Accepted |
 | [0011](0011-railway-vs-other-hosting.md) | Railway as the primary host | Accepted |
+| [0012](0012-fraud-screening-failure-policy.md) | Fraud screening never approves on failure | Accepted |

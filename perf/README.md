@@ -4,7 +4,7 @@
 
 ## Version
 
-`PAYMENTS_LIST_INDEX_VERSION=V6` is only in that SQL comment, plus the filename `V6__payments_list_index.sql` and `V6__payments_list_index.sql.conf`. Main `745f822` ends at V5, so V6 is the next free version there. Renumber this file and its `.conf` before merge if another migration with the same version reaches main first. Do not edit the script after a shared database has applied it.
+`PAYMENTS_LIST_INDEX_VERSION=V6` is only in that SQL comment, plus the filename `V6__payments_list_index.sql` and `V6__payments_list_index.sql.conf`. That version stayed V6 when main moved. The fraud-screening columns are the next file, `V7__payment_screening_reason.sql`. Do not edit the V6 script after a shared database has applied it.
 
 `CREATE INDEX CONCURRENTLY` is outside a transaction (`executeInTransaction=false`) and needs `spring.flyway.postgresql.transactional-lock=false`, because Flyway's default Postgres lock is transactional and would reject `CONCURRENTLY`. There is no `IF NOT EXISTS`: a failed build can leave an `INVALID` index, and the next attempt must drop it instead of skipping it. The two V3 indexes are unused: no payment query filters by `status` or orders by `created_at` alone. `countByUserId` and the page query both use the leading `user_id` of the new index.
 

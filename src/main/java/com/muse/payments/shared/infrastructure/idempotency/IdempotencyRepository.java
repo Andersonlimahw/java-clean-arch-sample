@@ -13,9 +13,9 @@ public interface IdempotencyRepository {
      * Inserts a processing row, or reclaims one that is already expired.
      * Empty when a live row still owns the key.
      */
-    Optional<UUID> tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl);
+    Optional<ProcessingLease> tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl);
 
-    int markCompleted(UUID userId, String key, String requestHash, UUID leaseId, int responseCode, String responseBodyJson);
+    int markCompleted(UUID userId, String key, String requestHash, UUID leaseId, Integer responseCode, String responseBodyJson);
 
     int deleteProcessing(UUID userId, String key, String requestHash, UUID leaseId);
 

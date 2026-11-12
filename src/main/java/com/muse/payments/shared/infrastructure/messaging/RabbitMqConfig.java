@@ -42,6 +42,7 @@ public class RabbitMqConfig {
     public static final String ROUTING_KEY_PAYMENT_CREATED = "payment.created";
     public static final String ROUTING_KEY_PAYMENT_COMPLETED = "payment.completed";
     public static final String ROUTING_KEY_PAYMENT_CANCELLED = "payment.cancelled";
+    public static final String ROUTING_KEY_PAYMENT_HELD = "payment.held";
     /**
      * Dead-letter routing key kept from the original created-only topology.
      * Created, completed, and cancelled notification failures all use this key.
@@ -83,6 +84,13 @@ public class RabbitMqConfig {
         return BindingBuilder.bind(paymentCreatedNotificationsQueue)
                 .to(paymentsExchange)
                 .with(ROUTING_KEY_PAYMENT_COMPLETED);
+    }
+
+    @Bean
+    public Binding paymentHeldBinding(Queue paymentCreatedNotificationsQueue, TopicExchange paymentsExchange) {
+        return BindingBuilder.bind(paymentCreatedNotificationsQueue)
+                .to(paymentsExchange)
+                .with(ROUTING_KEY_PAYMENT_HELD);
     }
 
     @Bean

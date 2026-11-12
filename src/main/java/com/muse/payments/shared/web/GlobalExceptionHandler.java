@@ -2,6 +2,7 @@ package com.muse.payments.shared.web;
 
 import com.muse.payments.shared.domain.ConflictException;
 import com.muse.payments.shared.domain.EntityNotFoundException;
+import com.muse.payments.shared.domain.ForbiddenException;
 import com.muse.payments.shared.domain.RateLimitExceededException;
 import com.muse.payments.shared.domain.ValidationException;
 import jakarta.persistence.OptimisticLockException;
@@ -110,6 +111,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ProblemDetail handleNotReadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
         return createProblemDetail(HttpStatus.BAD_REQUEST, "Malformed Request", "Malformed JSON request body.", request);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ProblemDetail handleForbidden(ForbiddenException ex, HttpServletRequest request) {
+        return createProblemDetail(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage(), request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

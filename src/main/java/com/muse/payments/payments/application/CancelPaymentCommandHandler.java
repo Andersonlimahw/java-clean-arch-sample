@@ -1,7 +1,6 @@
 package com.muse.payments.payments.application;
 
 import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentCancelledEvent;
 import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.shared.application.CommandHandler;
 import com.muse.payments.shared.application.IntegrationEvent;
@@ -10,7 +9,6 @@ import com.muse.payments.shared.domain.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
 import java.util.Objects;
 
 @Service
@@ -43,18 +41,8 @@ public class CancelPaymentCommandHandler implements CommandHandler<CancelPayment
         Payment saved = paymentRepository.save(payment);
 
         for (var domainEvent : payment.pullDomainEvents()) {
-            if (domainEvent instanceof PaymentCancelledEvent event) {
-                IntegrationEvent integrationEvent = IntegrationEvent.create(
-                        "Payment",
-                        event.paymentId(),
-                        "PaymentCancelled",
-                        Map.of(
-                                "paymentId", event.paymentId(),
-                                "userId", event.userId(),
-                                "reason", event.reason() != null ? event.reason() : ""
-                        ),
-                        Map.of("aggregateType", "Payment")
-                );
+            IntegrationEvent integrationEvent = PaymentOutboxMapper.toIntegrationEvent(domainEvent);
+            if (integrationEvent != null) {
                 outboxPort.append(integrationEvent);
             }
         }
