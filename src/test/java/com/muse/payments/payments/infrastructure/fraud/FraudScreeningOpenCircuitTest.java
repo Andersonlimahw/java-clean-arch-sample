@@ -79,6 +79,7 @@ class FraudScreeningOpenCircuitTest {
         verify(first, 1);
         verify(second, 1);
 
+        double notPermitted = ResilienceMeters.count(meterRegistry, "resilience4j.circuitbreaker.not.permitted.calls", "not_permitted");
         double retriedFailures = ResilienceMeters.count(meterRegistry, "resilience4j.retry.calls", "failed_with_retry");
         double notRetried = ResilienceMeters.count(meterRegistry, "resilience4j.retry.calls", "failed_without_retry");
         FraudScreeningRequest blocked = request();
@@ -93,11 +94,12 @@ class FraudScreeningOpenCircuitTest {
         assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.retry.calls", "failed_with_retry"))
                 .isEqualTo(retriedFailures);
         assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.circuitbreaker.not.permitted.calls", "not_permitted"))
-                .isEqualTo(1);
+                .isEqualTo(notPermitted + 1);
     }
 
     private static FraudScreeningRequest request() {
-        return new FraudScreeningRequest(UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"));
+        UUID paymentId = UUID.randomUUID();
+        return new FraudScreeningRequest(paymentId, UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), paymentId);
     }
 
     private static void verify(FraudScreeningRequest request, int count) {

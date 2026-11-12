@@ -52,7 +52,7 @@ class PaymentCacheServiceTest {
         UUID userId = UUID.randomUUID();
         PaymentResponse response = new PaymentResponse(
                 paymentId, userId, new BigDecimal("100.00"), "BRL", "Test",
-                PaymentStatus.PENDING, Instant.now(), Instant.now(), 0L, null
+                PaymentStatus.PENDING, Instant.now(), Instant.now(), 0L
         );
         String json = objectMapper.writeValueAsString(response);
 
@@ -96,7 +96,7 @@ class PaymentCacheServiceTest {
         UUID userId = UUID.randomUUID();
         PaymentResponse response = new PaymentResponse(
                 paymentId, userId, new BigDecimal("50.00"), "USD", "Desc",
-                PaymentStatus.PENDING, Instant.now(), Instant.now(), 0L, null
+                PaymentStatus.PENDING, Instant.now(), Instant.now(), 0L
         );
 
         cacheService.put(paymentId, response);

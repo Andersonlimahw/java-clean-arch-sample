@@ -88,6 +88,8 @@ logging:
 app:
   idempotency:
     cleanup-interval-ms: 3600000
+    # In-flight lease only. Completion extends the row to 24h. Long enough for screening plus persist.
+    processing-ttl: 2m
   jwt:
     issuer: ${JWT_ISSUER:https://api.payments.muse.com}
     audience: ${JWT_AUDIENCE:payments-api}
@@ -104,6 +106,8 @@ app:
   fraud-screening:
     base-url: ${FRAUD_SCREENING_BASE_URL:http://localhost:8090}
     connect-timeout: 300ms
+    # Longer than the time limiter so a cancelled attempt is released by interrupt, not by this timeout.
+    read-timeout: 3s
 
 springdoc:
   api-docs:
@@ -129,13 +133,18 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
         register-health-indicator: false
         record-exceptions:
-          - java.io.IOException
           - java.util.concurrent.TimeoutException
           - java.util.concurrent.RejectedExecutionException
           - org.springframework.web.client.ResourceAccessException
           - com.muse.payments.payments.infrastructure.fraud.FraudTransientException
         ignore-exceptions:
           - java.lang.InterruptedException
+          - io.github.resilience4j.bulkhead.BulkheadFullException
+  bulkhead:
+    instances:
+      fraudScreening:
+        max-concurrent-calls: 25
+        max-wait-duration: 0
   retry:
     instances:
       fraudScreening:
@@ -147,13 +156,13 @@ resilience4j:
         randomized-wait-factor: 0.5
         fail-after-max-attempts: false
         retry-exceptions:
-          - java.io.IOException
           - java.util.concurrent.TimeoutException
           - org.springframework.web.client.ResourceAccessException
           - com.muse.payments.payments.infrastructure.fraud.FraudTransientException
         ignore-exceptions:
           - java.lang.InterruptedException
           - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+          - io.github.resilience4j.bulkhead.BulkheadFullException
   timelimiter:
     instances:
       fraudScreening:

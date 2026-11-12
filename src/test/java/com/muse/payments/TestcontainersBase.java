@@ -1,5 +1,10 @@
 package com.muse.payments;
 
+import com.muse.payments.support.ControllableFraudScreening;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.annotation.DirtiesContext;
 import org.testcontainers.containers.GenericContainer;
@@ -13,6 +18,24 @@ import org.testcontainers.containers.RabbitMQContainer;
  */
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public abstract class TestcontainersBase {
+
+    @Autowired
+    private ObjectProvider<ControllableFraudScreening> fraudScreening;
+
+    @BeforeEach
+    void resetFraudScreeningBefore() {
+        if (fraudScreening != null) {
+            fraudScreening.ifAvailable(ControllableFraudScreening::reset);
+        }
+    }
+
+    @AfterEach
+    void resetFraudScreeningAfter() {
+        if (fraudScreening != null) {
+            fraudScreening.ifAvailable(ControllableFraudScreening::reset);
+        }
+    }
+
 
     @ServiceConnection
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")

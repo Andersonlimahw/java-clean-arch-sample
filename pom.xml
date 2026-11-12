@@ -130,10 +130,19 @@
             <artifactId>spring-modulith-starter-core</artifactId>
         </dependency>
 
-        <!-- The starter binds YAML and Micrometer. It does not bring the circuit-breaker, retry, or time-limiter jars. -->
+        <!--
+          resilience4j-spring-boot3 2.4.0 pulls spring6, which pulls framework-common.
+          framework-common already depends on circuitbreaker, retry, timelimiter, and bulkhead
+          (dependency:tree -Dverbose lists them as omitted for duplicate). They stay declared
+          so this module does not rely on that transitive edge.
+        -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-bulkhead</artifactId>
         </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>

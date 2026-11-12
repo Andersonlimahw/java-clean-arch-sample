@@ -26,6 +26,7 @@ app:
       enabled: false
   fraud-screening:
     connect-timeout: 200ms
+    read-timeout: 8s
   jwt:
     issuer: https://test.payments.muse.com
     audience: payments-api-test
@@ -43,6 +44,11 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 60s
         automatic-transition-from-open-to-half-open-enabled: false
+  bulkhead:
+    instances:
+      fraudScreening:
+        max-concurrent-calls: 4
+        max-wait-duration: 0
   retry:
     instances:
       fraudScreening:

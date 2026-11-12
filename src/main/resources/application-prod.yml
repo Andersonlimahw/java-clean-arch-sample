@@ -20,6 +20,7 @@ app:
     # No default. Boot fails when FRAUD_SCREENING_BASE_URL is missing. The scheme must be https.
     base-url: ${FRAUD_SCREENING_BASE_URL}
     connect-timeout: 200ms
+    read-timeout: 2s
 
 resilience4j:
   circuitbreaker:
@@ -30,6 +31,10 @@ resilience4j:
         failure-rate-threshold: 40
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3
+  bulkhead:
+    instances:
+      fraudScreening:
+        max-concurrent-calls: 50
   retry:
     instances:
       fraudScreening:

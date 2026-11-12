@@ -1,5 +1,6 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
+import com.muse.payments.shared.application.IdempotencyDecision;
 import com.muse.payments.shared.domain.ConflictException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,7 +28,7 @@ class IdempotencyServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(IdempotencyRepository.class);
-        service = new IdempotencyService(repository);
+        service = new IdempotencyService(repository, java.time.Duration.ofMinutes(2));
     }
 
     @Test

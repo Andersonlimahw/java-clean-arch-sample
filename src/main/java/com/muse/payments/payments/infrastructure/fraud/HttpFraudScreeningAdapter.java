@@ -6,11 +6,15 @@ import com.muse.payments.payments.application.FraudScreeningOutcome;
 import com.muse.payments.payments.application.FraudScreeningPort;
 import com.muse.payments.payments.application.FraudScreeningRequest;
 import com.muse.payments.payments.application.FraudScreeningResult;
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.timelimiter.TimeLimiter;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -32,12 +36,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * HTTP adapter for the fraud provider.
  *
- * <p>Outer to inner: Retry(CircuitBreaker(TimeLimiter(submit to a virtual thread))).
+ * <p>Outer to inner: Retry(CircuitBreaker(Bulkhead(TimeLimiter(submit to a virtual thread)))).
  * Each retry is one circuit-breaker call, so {@code minimum-number-of-calls} must stay
  * at least the retry max attempts or one logical screening can open the circuit.
- * The JDK client read timeout equals the time limiter, and {@code executor.submit}
- * returns a {@link java.util.concurrent.Future} that {@code cancel(true)} can interrupt.
+ * The JDK client read timeout is longer than the time limiter. {@code executor.submit}
+ * returns a {@link java.util.concurrent.Future} that {@code cancel(true)} interrupts,
+ * so the worker returns at the time limiter instead of waiting for the read timeout.
  * An explicit decline is a normal return, so the time limiter does not record it as a failure.
+ * Other 4xx responses are also normal returns: they do not open the circuit. Watch
+ * {@code payments.fraud.screening.unexpected_client_errors} for those.
  */
 public class HttpFraudScreeningAdapter implements FraudScreeningPort {
 
@@ -58,6 +65,7 @@ public class HttpFraudScreeningAdapter implements FraudScreeningPort {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final CircuitBreaker circuitBreaker;
+    private final Bulkhead bulkhead;
     private final Retry retry;
     private final TimeLimiter timeLimiter;
     private final ExecutorService executor;
@@ -68,33 +76,39 @@ public class HttpFraudScreeningAdapter implements FraudScreeningPort {
             RestClient restClient,
             ObjectMapper objectMapper,
             CircuitBreaker circuitBreaker,
+            Bulkhead bulkhead,
             Retry retry,
             TimeLimiter timeLimiter,
             ExecutorService executor,
-            Counter unexpectedClientErrors
+            Counter unexpectedClientErrors,
+            MeterRegistry meterRegistry
     ) {
         this.restClient = Objects.requireNonNull(restClient);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.circuitBreaker = Objects.requireNonNull(circuitBreaker);
+        this.bulkhead = Objects.requireNonNull(bulkhead);
         this.retry = Objects.requireNonNull(retry);
         this.timeLimiter = Objects.requireNonNull(timeLimiter);
         this.executor = Objects.requireNonNull(executor);
         this.unexpectedClientErrors = Objects.requireNonNull(unexpectedClientErrors);
-    }
-
-    int inFlight() {
-        return inFlight.get();
+        Gauge.builder("payments.fraud.screening.in.flight", inFlight, AtomicInteger::get)
+                .description("Fraud screening HTTP calls currently running")
+                .register(meterRegistry);
     }
 
     @Override
     public FraudScreeningResult screen(FraudScreeningRequest request) {
         Objects.requireNonNull(request, "request must not be null");
-        Callable<FraudScreeningResult> guarded = CircuitBreaker.decorateCallable(
-                circuitBreaker,
-                timeLimiter.decorateFutureSupplier(() -> executor.submit(() -> exchange(request))));
+        Callable<FraudScreeningResult> timed = timeLimiter.decorateFutureSupplier(
+                () -> executor.submit(() -> exchange(request)));
+        Callable<FraudScreeningResult> limited = Bulkhead.decorateCallable(bulkhead, timed);
+        Callable<FraudScreeningResult> guarded = CircuitBreaker.decorateCallable(circuitBreaker, limited);
         Callable<FraudScreeningResult> retried = Retry.decorateCallable(retry, guarded);
         try {
             return retried.call();
+        } catch (BulkheadFullException ex) {
+            log.warn("Fraud screening bulkhead is full for payment {}", request.paymentId());
+            return FraudScreeningResult.underReview(FALLBACK_EXHAUSTED);
         } catch (CallNotPermittedException ex) {
             log.warn("Fraud screening short-circuited for payment {}", request.paymentId());
             return FraudScreeningResult.underReview(FALLBACK_CIRCUIT_OPEN);
@@ -117,7 +131,7 @@ public class HttpFraudScreeningAdapter implements FraudScreeningPort {
         try {
             return restClient.post()
                     .uri(SCREENING_PATH)
-                    .header(HEADER_IDEMPOTENCY_KEY, request.paymentId().toString())
+                    .header(HEADER_IDEMPOTENCY_KEY, request.providerIdempotencyKey().toString())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(new ProviderRequest(

@@ -1,4 +1,4 @@
-package com.muse.payments.shared.infrastructure.idempotency;
+package com.muse.payments.shared.application;
 
 import java.util.Objects;
 import java.util.UUID;

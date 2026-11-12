@@ -1,5 +1,6 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
+import com.muse.payments.shared.application.IdempotencyPort;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -85,20 +86,22 @@ public class JdbcIdempotencyRepository implements IdempotencyRepository {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
         String sql = """
                 UPDATE idempotency_keys
-                SET status = ?, response_code = ?, response_body = CAST(? AS JSONB)
+                SET status = ?, response_code = ?, response_body = CAST(? AS JSONB), expires_at = ?
                 WHERE user_id = ? AND key = ? AND status = ? AND request_hash = ? AND lease_id = ? AND expires_at > ?
                 """;
+        Instant now = Instant.now();
         return jdbcTemplate.update(
                 sql,
                 IdempotencyRecord.STATUS_COMPLETED,
                 responseCode,
                 responseBodyJson,
+                Timestamp.from(now.plus(IdempotencyPort.COMPLETED_TTL)),
                 userId,
                 key,
                 IdempotencyRecord.STATUS_PROCESSING,
                 requestHash,
                 leaseId,
-                Timestamp.from(Instant.now())
+                Timestamp.from(now)
         );
     }
 

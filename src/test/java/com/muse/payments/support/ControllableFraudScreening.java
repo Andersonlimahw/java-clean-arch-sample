@@ -22,6 +22,12 @@ public class ControllableFraudScreening implements FraudScreeningPort {
     private volatile CountDownLatch entered;
     private volatile CountDownLatch release;
 
+    public void reset() {
+        this.result = FraudScreeningResult.clear();
+        this.entered = null;
+        this.release = null;
+    }
+
     public void setResult(FraudScreeningResult result) {
         this.result = result;
     }

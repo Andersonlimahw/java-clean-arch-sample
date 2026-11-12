@@ -1,5 +1,6 @@
 package com.muse.payments.payments.infrastructure;
 
+import com.muse.payments.payments.application.OutboundText;
 import com.muse.payments.payments.domain.Money;
 import com.muse.payments.payments.domain.Payment;
 import com.muse.payments.payments.domain.PaymentStatus;
@@ -53,6 +54,12 @@ public class PaymentJpaEntity {
     @Column(name = "screening_reason", length = 500)
     private String screeningReason;
 
+    @Column(name = "reviewer_id")
+    private UUID reviewerId;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
     public PaymentJpaEntity() {
     }
 
@@ -66,7 +73,9 @@ public class PaymentJpaEntity {
             Instant createdAt,
             Instant updatedAt,
             Long version,
-            String screeningReason
+            String screeningReason,
+            UUID reviewerId,
+            Instant reviewedAt
     ) {
         this.id = id;
         this.userId = userId;
@@ -77,7 +86,9 @@ public class PaymentJpaEntity {
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.version = version;
-        this.screeningReason = screeningReason;
+        this.screeningReason = OutboundText.limit(screeningReason);
+        this.reviewerId = reviewerId;
+        this.reviewedAt = reviewedAt;
     }
 
     public static PaymentJpaEntity fromDomain(Payment payment) {
@@ -92,7 +103,9 @@ public class PaymentJpaEntity {
                 payment.getCreatedAt(),
                 payment.getUpdatedAt(),
                 payment.getVersion(),
-                payment.getScreeningReason()
+                payment.getScreeningReason(),
+                payment.getReviewerId(),
+                payment.getReviewedAt()
         );
     }
 
@@ -106,7 +119,9 @@ public class PaymentJpaEntity {
                 this.createdAt,
                 this.updatedAt,
                 this.version,
-                this.screeningReason
+                this.screeningReason,
+                this.reviewerId,
+                this.reviewedAt
         );
     }
 

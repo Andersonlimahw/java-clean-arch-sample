@@ -1,6 +1,9 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
+import com.muse.payments.shared.application.IdempotencyDecision;
+import com.muse.payments.shared.application.IdempotencyPort;
 import com.muse.payments.shared.domain.ConflictException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,14 +19,25 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
-public class IdempotencyService {
+public class IdempotencyService implements IdempotencyPort {
 
-    public static final Duration DEFAULT_TTL = Duration.ofHours(24);
+    public static final Duration DEFAULT_TTL = IdempotencyPort.COMPLETED_TTL;
 
     private final IdempotencyRepository repository;
+    private final Duration processingTtl;
 
-    public IdempotencyService(IdempotencyRepository repository) {
+    public IdempotencyService(
+            IdempotencyRepository repository,
+            @Value("${app.idempotency.processing-ttl:2m}") Duration processingTtl
+    ) {
         this.repository = Objects.requireNonNull(repository);
+        this.processingTtl = processingTtl;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public IdempotencyDecision acquireProcessing(UUID userId, String key, String payloadJson) {
+        return evaluateOrAcquire(userId, key, payloadJson, processingTtl);
     }
 
     public static String computeHash(String payload) {

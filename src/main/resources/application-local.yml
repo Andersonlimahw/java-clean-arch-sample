@@ -4,6 +4,7 @@ app:
   fraud-screening:
     base-url: ${FRAUD_SCREENING_BASE_URL:http://localhost:8090}
     connect-timeout: 500ms
+    read-timeout: 5s
 
 resilience4j:
   circuitbreaker:
@@ -13,6 +14,10 @@ resilience4j:
         minimum-number-of-calls: 16
         failure-rate-threshold: 60
         wait-duration-in-open-state: 10s
+  bulkhead:
+    instances:
+      fraudScreening:
+        max-concurrent-calls: 8
   retry:
     instances:
       fraudScreening:

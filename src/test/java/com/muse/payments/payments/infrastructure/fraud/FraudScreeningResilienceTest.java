@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -78,7 +79,7 @@ class FraudScreeningResilienceTest {
         assertThat(retry.getMaxAttempts()).isEqualTo(3);
         assertThat(breaker.getMinimumNumberOfCalls()).isGreaterThanOrEqualTo(retry.getMaxAttempts());
         assertThat(retry.getExceptionPredicate().test(new FraudTransientException("down"))).isTrue();
-        assertThat(retry.getExceptionPredicate().test(new java.io.IOException("io"))).isTrue();
+        assertThat(retry.getExceptionPredicate().test(new org.springframework.web.client.ResourceAccessException("io"))).isTrue();
         assertThat(retry.getExceptionPredicate().test(new java.util.concurrent.TimeoutException("slow"))).isTrue();
         assertThat(retry.getExceptionPredicate().test(
                 io.github.resilience4j.circuitbreaker.CallNotPermittedException.createCallNotPermittedException(
@@ -200,7 +201,8 @@ class FraudScreeningResilienceTest {
         assertThat(elapsedMs).isLessThan(4_500);
         verifyRequests(request, 3);
         assertThat(ResilienceMeters.count(meterRegistry, "resilience4j.timelimiter.calls", "timeout")).isEqualTo(timeouts + 3);
-        await().atMost(Duration.ofSeconds(1)).until(() -> adapter.inFlight() == 0);
+        await().atMost(Duration.ofSeconds(1)).until(() ->
+                meterRegistry.get("payments.fraud.screening.in.flight").gauge().value() == 0d);
         assertThat(circuitBreakerRegistry.circuitBreaker(HttpFraudScreeningAdapter.INSTANCE_NAME).getState())
                 .isEqualTo(CircuitBreaker.State.CLOSED);
     }
@@ -223,16 +225,19 @@ class FraudScreeningResilienceTest {
     }
 
     private static FraudScreeningRequest request() {
+        UUID paymentId = UUID.randomUUID();
         return new FraudScreeningRequest(
+                paymentId,
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                Money.of(new BigDecimal("10.00"), "BRL"));
+                Money.of(new BigDecimal("10.00"), "BRL"),
+                paymentId);
     }
 
     private static void verifyRequests(FraudScreeningRequest request, int count) {
         SERVER.verify(
                 exactly(count),
                 postRequestedFor(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
+                        .withHeader(HttpFraudScreeningAdapter.HEADER_IDEMPOTENCY_KEY, equalTo(request.providerIdempotencyKey().toString()))
                         .withRequestBody(containing(request.paymentId().toString())));
     }
 }

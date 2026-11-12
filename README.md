@@ -21,7 +21,7 @@ Trade-offs: [docs/adr](docs/adr/README.md).
 
 ## Authorization
 
-Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_ADMIN`. A missing or invalid token is **401**. A known token whose role is not allowed is **403** `application/problem+json`. Ownership misses on payments stay **404** so callers cannot tell whether another user's payment exists.
+Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER`, `ROLE_ADMIN`, and `ROLE_FRAUD_REVIEWER`. A missing or invalid token is **401**. A known token whose role is not allowed is **403** `application/problem+json`. Ownership misses on payments stay **404** so callers cannot tell whether another user's payment exists.
 
 | Endpoint | Who can call it | Ownership |
 |---|---|---|
@@ -30,12 +30,12 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 | `GET /api/v1/payments/{id}` | `USER` or `ADMIN` | Owner, or any payment when the caller is `ADMIN`. Another user's payment is **404** |
 | `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN` |
 | `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. `PENDING` only. `UNDER_REVIEW` is **409**. Another user's payment is **404** |
-| `POST /api/v1/payments/{id}/review?decision=APPROVE\|REJECT` | `USER` or `ADMIN` | Owner only. `UNDER_REVIEW` only. `APPROVE` makes it `PENDING`. `REJECT` cancels it. |
+| `POST /api/v1/payments/{id}/review?decision=APPROVE\|REJECT` | `ADMIN` or `FRAUD_REVIEWER` | Not the owner. `UNDER_REVIEW` only. `APPROVE` makes it `PENDING` and clears the screening reason. `REJECT` cancels it with the reviewer's reason. The owner, including an `ADMIN` who created the payment, is **403**. |
 | `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
 | `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
 | Actuator health, info, prometheus, and OpenAPI | Public | — |
 
-`Idempotency-Key` on `POST /api/v1/payments` is kept for 24 hours. After `expires_at`, the same key is a new request. The lease commits before fraud screening, so a slow provider does not hold a database connection. A failed create releases that attempt so the key can be retried. An explicit fraud decline stores a generic 422 and replays it. The provider reason is not in the response. A provider that does not answer stores the payment as `UNDER_REVIEW` (not approved). Confirm is rejected until `POST /api/v1/payments/{id}/review?decision=APPROVE`. Local runs need the Compose WireMock (`fraud-screening` on port 8090), which answers `CLEAR`. Set `FRAUD_SCREENING_BASE_URL`. Production requires that variable and `https`. Completing a key updates only the unexpired `PROCESSING` row for the lease acquired by that attempt. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until none remain; the run interval is `app.idempotency.cleanup-interval-ms` (default 1 hour). The lookup index is `idx_idempotency_expires` from `V1__shared_outbox_inbox.sql`.
+`Idempotency-Key` on `POST /api/v1/payments` is kept for 24 hours after the attempt completes. A `PROCESSING` lease lives only for `app.idempotency.processing-ttl` (default 2 minutes). A crash during screening leaves an expired lease, and the next request with the same key reclaims it. After the completed row's `expires_at`, the same key is a new request. The lease commits before fraud screening, so a slow provider does not hold a database connection. A failed create releases that attempt so the key can be retried. An explicit fraud decline stores a generic 422 and replays it. The provider reason is not in the response. A provider that does not answer stores the payment as `UNDER_REVIEW` (not approved). Replaying that key still returns the original 201 `UNDER_REVIEW` body after a reviewer later approves the payment. Confirm is rejected until `POST /api/v1/payments/{id}/review?decision=APPROVE` by an `ADMIN` or `FRAUD_REVIEWER` who does not own the payment. Local runs need the Compose WireMock (`fraud-screening` on port 8090), which answers `CLEAR`. Set `FRAUD_SCREENING_BASE_URL`. Production requires that variable and `https`, and the base Kubernetes ConfigMap does not supply a stand-in URL. Completing a key extends `expires_at` to 24 hours and updates only the unexpired `PROCESSING` row for the lease acquired by that attempt. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until none remain; the run interval is `app.idempotency.cleanup-interval-ms` (default 1 hour). The lookup index is `idx_idempotency_expires` from `V1__shared_outbox_inbox.sql`.
 
 ## Quickstart
 

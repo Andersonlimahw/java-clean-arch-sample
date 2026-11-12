@@ -1,6 +1,5 @@
 package com.muse.payments.payments.infrastructure.fraud;
 
-import com.muse.fraudscreening.FraudScreeningTestApplication;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -16,14 +15,9 @@ import java.lang.annotation.Target;
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
                 "app.fraud-screening.mode=http",
-                "management.tracing.enabled=false",
-                "management.otlp.tracing.export.enabled=false",
-                "management.otlp.metrics.export.enabled=false",
-                "spring.main.banner-mode=off",
-                "spring.modulith.moments.enabled=false",
-                "management.endpoint.health.validate-group-membership=false"
+                "spring.main.banner-mode=off"
         }
 )
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "fraud-adapter-test"})
 public @interface FraudScreeningSpringTest {
 }

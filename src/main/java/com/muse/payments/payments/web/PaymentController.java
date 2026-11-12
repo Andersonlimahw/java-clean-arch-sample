@@ -6,14 +6,12 @@ import com.muse.payments.payments.application.CancelPaymentCommand;
 import com.muse.payments.payments.application.CancelPaymentCommandHandler;
 import com.muse.payments.payments.application.ConfirmPaymentCommand;
 import com.muse.payments.payments.application.ConfirmPaymentCommandHandler;
-import com.muse.payments.payments.application.CreatePaymentCommand;
-import com.muse.payments.payments.application.CreatePaymentCommandHandler;
 import com.muse.payments.payments.application.CreatePaymentRequest;
+import com.muse.payments.payments.application.CreatePaymentResult;
+import com.muse.payments.payments.application.CreatePaymentUseCase;
 import com.muse.payments.payments.application.ReviewDecision;
 import com.muse.payments.payments.application.ReviewPaymentCommand;
 import com.muse.payments.payments.application.ReviewPaymentCommandHandler;
-import com.muse.payments.payments.application.ScreenedPayment;
-import com.muse.payments.payments.domain.PaymentDeclinedException;
 import com.muse.payments.payments.application.GetPaymentByIdQuery;
 import com.muse.payments.payments.application.GetPaymentByIdQueryHandler;
 import com.muse.payments.payments.application.ListPaymentsQuery;
@@ -21,21 +19,15 @@ import com.muse.payments.payments.application.ListPaymentsQueryHandler;
 import com.muse.payments.payments.application.PageResponse;
 import com.muse.payments.payments.application.PaymentResponse;
 import com.muse.payments.shared.domain.ValidationException;
-import com.muse.payments.shared.web.GlobalExceptionHandler;
-import com.muse.payments.shared.infrastructure.idempotency.IdempotencyDecision;
-import com.muse.payments.shared.infrastructure.idempotency.IdempotencyService;
 import com.muse.payments.shared.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -61,35 +53,29 @@ public class PaymentController {
     public static final String HEADER_IDEMPOTENCY_KEY = "Idempotency-Key";
     public static final String HEADER_IDEMPOTENT_REPLAYED = "Idempotent-Replayed";
 
-    private final CreatePaymentCommandHandler createPaymentHandler;
+    private final CreatePaymentUseCase createPaymentUseCase;
     private final ReviewPaymentCommandHandler reviewPaymentHandler;
-    private final TransactionTemplate transactionTemplate;
     private final ConfirmPaymentCommandHandler confirmPaymentHandler;
     private final CancelPaymentCommandHandler cancelPaymentHandler;
     private final GetPaymentByIdQueryHandler getPaymentByIdHandler;
     private final ListPaymentsQueryHandler listPaymentsHandler;
-    private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
 
     public PaymentController(
-            CreatePaymentCommandHandler createPaymentHandler,
+            CreatePaymentUseCase createPaymentUseCase,
             ReviewPaymentCommandHandler reviewPaymentHandler,
-            TransactionTemplate transactionTemplate,
             ConfirmPaymentCommandHandler confirmPaymentHandler,
             CancelPaymentCommandHandler cancelPaymentHandler,
             GetPaymentByIdQueryHandler getPaymentByIdHandler,
             ListPaymentsQueryHandler listPaymentsHandler,
-            IdempotencyService idempotencyService,
             ObjectMapper objectMapper
     ) {
-        this.createPaymentHandler = Objects.requireNonNull(createPaymentHandler);
+        this.createPaymentUseCase = Objects.requireNonNull(createPaymentUseCase);
         this.reviewPaymentHandler = Objects.requireNonNull(reviewPaymentHandler);
-        this.transactionTemplate = Objects.requireNonNull(transactionTemplate);
         this.confirmPaymentHandler = Objects.requireNonNull(confirmPaymentHandler);
         this.cancelPaymentHandler = Objects.requireNonNull(cancelPaymentHandler);
         this.getPaymentByIdHandler = Objects.requireNonNull(getPaymentByIdHandler);
         this.listPaymentsHandler = Objects.requireNonNull(listPaymentsHandler);
-        this.idempotencyService = Objects.requireNonNull(idempotencyService);
         this.objectMapper = Objects.requireNonNull(objectMapper);
     }
 
@@ -98,8 +84,7 @@ public class PaymentController {
     public ResponseEntity<?> createPayment(
             @RequestHeader(value = HEADER_IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @Valid @RequestBody CreatePaymentRequest request,
-            CurrentUser currentUser,
-            HttpServletRequest httpRequest
+            CurrentUser currentUser
     ) throws JsonProcessingException {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ValidationException("Idempotency-Key header is required for payment creation");
@@ -107,92 +92,19 @@ public class PaymentController {
         if (idempotencyKey.trim().length() > 120) {
             throw new ValidationException("Idempotency-Key header must not exceed 120 characters");
         }
-
-        String normalizedKey = idempotencyKey.trim();
-        CreatePaymentRequest canonical = canonicalize(request);
-        String requestPayloadJson = objectMapper.writeValueAsString(canonical);
-
-        IdempotencyDecision decision = idempotencyService.evaluateOrAcquire(
-                currentUser.userId(),
-                normalizedKey,
-                requestPayloadJson,
-                IdempotencyService.DEFAULT_TTL
-        );
-
-        if (decision.isReplayed()) {
-            MediaType replayType = decision.responseCode() == HttpStatus.UNPROCESSABLE_ENTITY.value()
+        CreatePaymentResult result = createPaymentUseCase.execute(
+                currentUser.userId(), idempotencyKey.trim(), canonicalize(request));
+        if (result instanceof CreatePaymentResult.Replayed replay) {
+            MediaType replayType = replay.status() == HttpStatus.UNPROCESSABLE_ENTITY.value()
                     ? MediaType.APPLICATION_PROBLEM_JSON
                     : MediaType.APPLICATION_JSON;
-            return ResponseEntity.status(decision.responseCode())
+            return ResponseEntity.status(replay.status())
                     .header(HEADER_IDEMPOTENT_REPLAYED, "true")
                     .contentType(replayType)
-                    .body(decision.responseBody());
+                    .body(replay.body());
         }
-
-        CreatePaymentCommand command = new CreatePaymentCommand(
-                currentUser.userId(),
-                canonical.amount(),
-                canonical.currency(),
-                canonical.description()
-        );
-
-        ScreenedPayment screened;
-        try {
-            screened = createPaymentHandler.screen(command);
-        } catch (PaymentDeclinedException ex) {
-            ProblemDetail problem = GlobalExceptionHandler.createProblemDetail(
-                    HttpStatus.UNPROCESSABLE_ENTITY, "Payment Declined", ex.getMessage(), httpRequest);
-            try {
-                idempotencyService.saveCompleted(
-                        currentUser.userId(),
-                        normalizedKey,
-                        requestPayloadJson,
-                        decision.leaseId(),
-                        HttpStatus.UNPROCESSABLE_ENTITY.value(),
-                        objectMapper.writeValueAsString(problem)
-                );
-            } catch (RuntimeException saveError) {
-                releaseLease(currentUser.userId(), normalizedKey, requestPayloadJson, decision.leaseId(), saveError);
-                throw saveError;
-            }
-            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .contentType(MediaType.APPLICATION_PROBLEM_JSON)
-                    .body(problem);
-        } catch (RuntimeException ex) {
-            releaseLease(currentUser.userId(), normalizedKey, requestPayloadJson, decision.leaseId(), ex);
-            throw ex;
-        }
-
-        try {
-            PaymentResponse response = transactionTemplate.execute(status -> {
-                PaymentResponse body = createPaymentHandler.persist(screened);
-                try {
-                    idempotencyService.saveCompleted(
-                            currentUser.userId(),
-                            normalizedKey,
-                            requestPayloadJson,
-                            decision.leaseId(),
-                            HttpStatus.CREATED.value(),
-                            objectMapper.writeValueAsString(body)
-                    );
-                } catch (JsonProcessingException jsonError) {
-                    throw new IllegalStateException("Could not store the idempotent payment response", jsonError);
-                }
-                return body;
-            });
-            return ResponseEntity.created(URI.create("/api/v1/payments/" + response.id())).body(response);
-        } catch (RuntimeException ex) {
-            releaseLease(currentUser.userId(), normalizedKey, requestPayloadJson, decision.leaseId(), ex);
-            throw ex;
-        }
-    }
-
-    private void releaseLease(UUID userId, String key, String payloadJson, UUID leaseId, RuntimeException ex) {
-        try {
-            idempotencyService.releaseProcessing(userId, key, payloadJson, leaseId);
-        } catch (RuntimeException releaseError) {
-            ex.addSuppressed(releaseError);
-        }
+        PaymentResponse created = ((CreatePaymentResult.Created) result).body();
+        return ResponseEntity.created(URI.create("/api/v1/payments/" + created.id())).body(created);
     }
 
     private static CreatePaymentRequest canonicalize(CreatePaymentRequest request) {
@@ -227,7 +139,7 @@ public class PaymentController {
     }
 
     @PostMapping("/{id}/review")
-    @Operation(summary = "Release an UNDER_REVIEW payment to PENDING, or reject it. Confirm stays rejected until a review approves it.")
+    @Operation(summary = "ADMIN or FRAUD_REVIEWER only. The reviewer cannot own the payment. APPROVE moves UNDER_REVIEW to PENDING. REJECT cancels it. Replaying the original Idempotency-Key still returns the stored 201 UNDER_REVIEW body.")
     public ResponseEntity<PaymentResponse> reviewPayment(
             @PathVariable UUID id,
             @RequestParam ReviewDecision decision,

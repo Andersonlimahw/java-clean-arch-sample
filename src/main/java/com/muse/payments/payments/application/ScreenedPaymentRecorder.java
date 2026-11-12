@@ -1,15 +1,12 @@
 package com.muse.payments.payments.application;
 
 import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentCreatedEvent;
-import com.muse.payments.payments.domain.PaymentHeldForReviewEvent;
 import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.shared.application.IntegrationEvent;
 import com.muse.payments.shared.application.OutboxPort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
 import java.util.Objects;
 
 @Service
@@ -32,47 +29,11 @@ public class ScreenedPaymentRecorder {
                 : Payment.create(screened.paymentId(), screened.userId(), screened.money(), screened.description());
         Payment saved = paymentRepository.save(payment);
         for (var domainEvent : payment.pullDomainEvents()) {
-            if (domainEvent instanceof PaymentCreatedEvent event) {
-                appendCreated(event);
-            } else if (domainEvent instanceof PaymentHeldForReviewEvent event) {
-                appendHeld(event);
+            IntegrationEvent integrationEvent = PaymentOutboxMapper.toIntegrationEvent(domainEvent);
+            if (integrationEvent != null) {
+                outboxPort.append(integrationEvent);
             }
         }
         return PaymentResponse.from(saved);
-    }
-
-    private void appendCreated(PaymentCreatedEvent event) {
-        outboxPort.append(IntegrationEvent.create(
-                "Payment",
-                event.paymentId(),
-                "PaymentCreated",
-                Map.of(
-                        "paymentId", event.paymentId(),
-                        "userId", event.userId(),
-                        "amount", event.amount(),
-                        "currency", event.currency(),
-                        "status", "PENDING",
-                        "description", event.description() != null ? event.description() : ""
-                ),
-                Map.of("aggregateType", "Payment")
-        ));
-    }
-
-    private void appendHeld(PaymentHeldForReviewEvent event) {
-        outboxPort.append(IntegrationEvent.create(
-                "Payment",
-                event.paymentId(),
-                "PaymentHeldForReview",
-                Map.of(
-                        "paymentId", event.paymentId(),
-                        "userId", event.userId(),
-                        "amount", event.amount(),
-                        "currency", event.currency(),
-                        "status", "UNDER_REVIEW",
-                        "description", event.description() != null ? event.description() : "",
-                        "reason", event.reason() != null ? event.reason() : ""
-                ),
-                Map.of("aggregateType", "Payment")
-        ));
     }
 }

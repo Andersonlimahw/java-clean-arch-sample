@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -109,15 +110,21 @@ class PaymentTest {
         Payment released = Payment.createUnderReview(
                 UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
         released.pullDomainEvents();
-        released.releaseFromReview();
+        UUID reviewer = UUID.randomUUID();
+        released.releaseFromReview(reviewer, Instant.now());
         assertThat(released.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(released.getScreeningReason()).isNull();
+        assertThat(released.getReviewerId()).isEqualTo(reviewer);
         assertThat(released.pullDomainEvents()).singleElement().isInstanceOf(PaymentCreatedEvent.class);
 
         Payment rejected = Payment.createUnderReview(
                 UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
         rejected.pullDomainEvents();
-        rejected.rejectFromReview();
+        rejected.rejectFromReview(reviewer, Instant.now(), "Rejected in fraud review");
         assertThat(rejected.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        var rejectedEvents = rejected.pullDomainEvents();
+        assertThat(rejectedEvents.getFirst()).isInstanceOf(PaymentCancelledEvent.class);
+        assertThat(((PaymentCancelledEvent) rejectedEvents.getFirst()).reason()).isEqualTo("Rejected in fraud review");
     }
 
     @Test
