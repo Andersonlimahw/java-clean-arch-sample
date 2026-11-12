@@ -19,50 +19,56 @@ Financial payments platforms require absolute consistency, zero duplicate charge
 ## 2. Idempotency-Key Protocol (IETF Standard)
 
 ### 2.1 HTTP Contract
-- Mutating endpoints (`POST /api/v1/payments`, `POST /api/v1/payments/{id}/confirm`, `POST /api/v1/payments/{id}/cancel`) **require** the HTTP header:
+- `POST /api/v1/payments` requires the header:
   ```http
   Idempotency-Key: <opaque-string>
   ```
-- **Key Constraints**:
-  - Max length: 120 characters.
-  - Allowed characters: alphanumeric, hyphens, underscores (`^[a-zA-Z0-9_-]{1,120}$`).
-  - Missing key on mutating endpoints returns `HTTP 400 Bad Request` with `ProblemDetail` ("Idempotency-Key header is required").
+- Confirm and cancel do not take this header. They are owner-scoped state transitions guarded by optimistic locking.
+- **Key constraints**:
+  - Trimmed value must be non-blank and at most 120 characters (the `idempotency_keys.key` column).
+  - A missing or blank key returns `HTTP 400` with title `Validation Error` and detail `Idempotency-Key header is required for payment creation`.
+  - A key longer than 120 characters returns `HTTP 400` with detail `Idempotency-Key header must not exceed 120 characters`.
 
 ### 2.2 Lifecycle & State Machine
-An idempotency record progresses through atomic states:
+Stored statuses are `PROCESSING` and `COMPLETED`. Each acquisition has its own `lease_id`.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> IN_PROGRESS: Acquire Lock (Insert with status IN_PROGRESS)
-    IN_PROGRESS --> COMPLETED: Transaction Commits (Save response_code & response_body)
-    IN_PROGRESS --> FAILED: Transaction Rollback (Delete key or mark FAILED)
-    COMPLETED --> COMPLETED: Replay (Same hash -> Return cached response)
-    COMPLETED --> CONFLICT_409: Same key + Different hash -> HTTP 409
-    IN_PROGRESS --> CONFLICT_409: Concurrent request with same key -> HTTP 409
+    [*] --> PROCESSING: Acquire or reclaim an expired row
+    PROCESSING --> COMPLETED: Create succeeds and the same lease is still unexpired
+    PROCESSING --> [*]: Create fails and this lease deletes its row
+    COMPLETED --> COMPLETED: Replay when the hash matches
+    COMPLETED --> CONFLICT_409: Same unexpired key, different hash
+    PROCESSING --> CONFLICT_409: Another request sees the unexpired processing row
 ```
+
+- A failed create deletes only the `PROCESSING` row for that `lease_id` and request hash, so the client can retry the same key.
+- Completion updates a row only when it is still `PROCESSING`, the request hash matches, `lease_id` matches, and `expires_at` is in the future. A late completion cannot overwrite a newer acquisition.
+- There is no `FAILED` status.
 
 ### 2.3 Scope & Collision Protection
 - **Compound Key**: `(user_id, key)` is the database Primary Key.
 - Keys are partitioned per authenticated user; Client A and Client B generating identical UUIDs never collide or share cached responses.
 
 ### 2.4 Payload Hashing (Fingerprinting)
-- The server computes a SHA-256 digest of `(HTTP Method + Request URI + Canonical Request Body)`:
+- The server stores the lowercase SHA-256 hex of the canonical JSON body (`ObjectMapper` serialization of `CreatePaymentRequest`):
   ```
-  request_hash = SHA256(Method + "|" + URI + "|" + NormalizedBody)
+  request_hash = SHA256(canonicalJsonBody)
   ```
-- **Replay Behavior**:
-  1. **Exact Replay** (`status == COMPLETED` and `saved_hash == current_hash`):
-     - Return the exact cached HTTP response status and body (e.g. `201 Created` or `200 OK`).
-     - Attach header `Idempotent-Replayed: true`.
-  2. **Hash Mismatch** (`status == COMPLETED` and `saved_hash != current_hash`):
-     - Reject with `HTTP 409 Conflict`.
-     - Detail: `"Idempotency key was previously used with a different request payload."`
-  3. **Concurrent Lock** (`status == IN_PROGRESS` and `now < expires_at`):
-     - Reject with `HTTP 409 Conflict` (or `HTTP 429 Too Many Requests`).
-     - Detail: `"A request with this idempotency key is currently being processed."`
-  4. **Expired key** (`expires_at <= now`, any status):
-     - Treat the key as new. The insert reclaims the existing row only when it is already expired, so a live row and a concurrent reclaim cannot both proceed.
-     - A scheduled cleanup deletes expired rows in bounded batches and skips rows locked by another instance. Lookup uses `idx_idempotency_expires`.
+- **Replay behavior**:
+  1. **Exact replay** (`status == COMPLETED`, unexpired, hashes equal ignoring case):
+     - Return the cached status and body.
+     - Header `Idempotent-Replayed: true`.
+  2. **Hash mismatch** (`status == COMPLETED`, unexpired, hashes differ):
+     - `HTTP 409`. Detail: `Idempotency key payload mismatch for key: <key>`.
+  3. **In flight** (`status == PROCESSING` and unexpired):
+     - `HTTP 409`. Detail: `Concurrent request in progress for idempotency key: <key>`.
+  4. **Any other unexpired status**:
+     - `HTTP 409`. Detail: `Idempotency key cannot be reused while it is unexpired: <key>`.
+     - The request does not create another payment.
+  5. **Expired key** (`expires_at <= now`, any status):
+     - Treat the key as new. The insert reclaims the existing row only when it is already expired (`ON CONFLICT ... WHERE idempotency_keys.expires_at <= EXCLUDED.created_at`), and it replaces `lease_id`. A live row and a concurrent reclaim cannot both proceed.
+     - Each cleanup run deletes expired rows in batches of 500 with `FOR UPDATE SKIP LOCKED` until a short batch remains, and repeats the expiry predicate on the delete. The interval is `app.idempotency.cleanup-interval-ms` (default 1 hour). Lookup uses `idx_idempotency_expires`.
 
 ---
 

@@ -31,7 +31,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 | `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
 | Actuator health, info, prometheus, and OpenAPI | Public | — |
 
-`Idempotency-Key` on `POST /api/v1/payments` is kept for 24 hours. After `expires_at`, the same key is a new request. A scheduled job deletes expired rows in batches (`app.idempotency.cleanup-interval-ms`, default 1 hour) and skips rows locked by another instance. The lookup index is `idx_idempotency_expires` from `V1__shared_outbox_inbox.sql`.
+`Idempotency-Key` on `POST /api/v1/payments` is kept for 24 hours. After `expires_at`, the same key is a new request. A failed create releases that attempt so the key can be retried. Completing a key updates only the unexpired `PROCESSING` row for the lease acquired by that attempt. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until none remain; the run interval is `app.idempotency.cleanup-interval-ms` (default 1 hour). The lookup index is `idx_idempotency_expires` from `V1__shared_outbox_inbox.sql`.
 
 ## Quickstart
 
