@@ -72,6 +72,12 @@ app:
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:P7D}
     private-key-pem: ${JWT_PRIVATE_KEY:}
     public-key-pem: ${JWT_PUBLIC_KEY:}
+  messaging:
+    listener-max-attempts: ${LISTENER_MAX_ATTEMPTS:5}
+    listener-initial-interval-ms: ${LISTENER_INITIAL_INTERVAL_MS:500}
+    listener-multiplier: ${LISTENER_MULTIPLIER:2.0}
+    listener-max-interval-ms: ${LISTENER_MAX_INTERVAL_MS:10000}
+    confirm-timeout: ${PUBLISH_CONFIRM_TIMEOUT:5s}
 
 springdoc:
   api-docs:
