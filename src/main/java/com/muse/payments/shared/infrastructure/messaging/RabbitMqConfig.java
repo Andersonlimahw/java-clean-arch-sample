@@ -18,6 +18,7 @@ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.retry.backoff.ExponentialRandomBackOffPolicy;
@@ -98,8 +99,16 @@ public class RabbitMqConfig {
                 .with(ROUTING_KEY_NOTIFICATIONS_DLQ);
     }
 
+    /**
+     * Replaces Boot's auto-configured factory. Boot's configurer still applies listener
+     * properties such as {@code spring.rabbitmq.listener.simple.auto-startup}, so the
+     * migration profile can keep consumers stopped. The advice chain is then replaced
+     * with the outbox listener retry; {@code spring.rabbitmq.listener.simple.retry} is
+     * not the retry mechanism.
+     */
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer,
             ConnectionFactory connectionFactory,
             MessageConverter messageConverter,
             @Value("${app.messaging.listener-max-attempts:5}") int maxAttempts,
@@ -125,7 +134,7 @@ public class RabbitMqConfig {
         );
 
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
-        factory.setConnectionFactory(connectionFactory);
+        configurer.configure(factory, connectionFactory);
         factory.setMessageConverter(messageConverter);
         factory.setRecoveryInterval(3000L);
         factory.setDefaultRequeueRejected(false);

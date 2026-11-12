@@ -56,12 +56,11 @@ public class JwtKeyConfig {
             }
         }
 
-        boolean isLocalOrTest = env.acceptsProfiles(Profiles.of("local", "test", "default"));
-        if (!isLocalOrTest) {
+        if (!ephemeralKeysAllowed(env)) {
             throw new IllegalStateException("Production environment must define JWT_PRIVATE_KEY and JWT_PUBLIC_KEY. Ephemeral keys are forbidden in production.");
         }
 
-        log.warn("No JWT keys provided. Generating an ephemeral 2048-bit RSA key pair for local/test use.");
+        log.warn("No JWT keys provided. Generating an ephemeral 2048-bit RSA key pair for local, test, or non-production migration use.");
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(2048);
@@ -73,6 +72,18 @@ public class JwtKeyConfig {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate ephemeral RSA key pair", e);
         }
+    }
+
+    /**
+     * Ephemeral keys are allowed for local/test/default and for a migration process that
+     * is not also on the {@code prod} profile. {@code prod} stays fail-closed even when the
+     * migration profile is added on top, so a production pod never signs with a generated key.
+     */
+    static boolean ephemeralKeysAllowed(Environment env) {
+        if (env.acceptsProfiles(Profiles.of("prod"))) {
+            return false;
+        }
+        return env.acceptsProfiles(Profiles.of("local", "test", "default", "migration"));
     }
 
     @Bean
