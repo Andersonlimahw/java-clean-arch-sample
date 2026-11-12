@@ -9,7 +9,7 @@ The client that creates a payment receives `201` as soon as PostgreSQL commits. 
 
 ## Decision
 
-Payment state is strongly consistent in PostgreSQL: the caller that just got `201` can `GET` the payment and see it.
+The payment row in PostgreSQL is strongly consistent. A caller that just received `201` can `GET` that new id and see it, because create does not leave an older status in Redis. Confirm and cancel delete the cache entry after commit ([ADR 0008](0008-redis-cache-invalidation.md)). If that delete fails while Redis still answers reads, the cached status can remain until the TTL (default 10 minutes). If Redis is down, the GET reads PostgreSQL.
 
 Notifications for `payment.created` are eventually consistent. `GET /api/v1/notifications` can be empty for a short time after create. The UI, if any, polls or refreshes. HTTP create returns after the database commit and does not wait for the broker. Confirm and cancel append outbox rows and do not produce notification rows, because those routing keys have no queue ([ADR 0005](0005-rabbitmq-vs-kafka.md)).
 

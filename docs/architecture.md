@@ -1,7 +1,7 @@
 # Architecture — Payments Platform
 
 One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 21.
-Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel.
+Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel. Open means a Spring Modulith module of type `OPEN`: the other modules may depend on it. It holds ports and cross-cutting types, not payment rules.
 The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md).
 
 ## System context (C4 L1)
@@ -16,7 +16,16 @@ flowchart LR
 
 ## Containers (C4 L2)
 
-Still one deployable. Redis, PostgreSQL, and RabbitMQ are separate processes.
+The application is one deployable. Redis, PostgreSQL, and RabbitMQ are separate processes.
+
+```mermaid
+flowchart LR
+    API["payments-platform.jar"] --> PG[("PostgreSQL")]
+    API --> Redis[("Redis")]
+    API --> MQ["RabbitMQ"]
+```
+
+## Components (C4 L3)
 
 ```mermaid
 flowchart TB
@@ -25,7 +34,7 @@ flowchart TB
     API --> PAY["payments"]
     API --> NTF["notifications"]
     API --> SH["shared"]
-    PAY -->|outbox row, same transaction| PG[("PostgreSQL")]
+    PAY -->|"outbox row, same transaction"| PG[("PostgreSQL")]
     ID --> PG
     NTF --> PG
     SH -->|relay| MQ["RabbitMQ"]
@@ -41,7 +50,7 @@ flowchart TB
 | identity | `com.muse.payments.identity` | `users`, `refresh_tokens` | Issues JWT used by the other HTTP APIs. No foreign keys into payments. |
 | payments | `com.muse.payments.payments` | `payments` | Appends integration events to `outbox_events`. Does not call the notifications repository. |
 | notifications | `com.muse.payments.notifications` | `notifications` | Learns about payments only from RabbitMQ. |
-| shared | `com.muse.payments.shared` | `outbox_events`, `processed_events`, `idempotency_keys` | Open kernel: CQRS ports, outbox, security, problem details. |
+| shared | `com.muse.payments.shared` | `outbox_events`, `processed_events`, `idempotency_keys` | Depended on by identity, payments, and notifications. Not a business module. |
 
 `identity` and `payments` use `domain`, `application`, `infrastructure`, and `web`.
 `notifications` has `domain`, `infrastructure`, and `web`, and no `application` package.
@@ -172,6 +181,18 @@ erDiagram
         uuid aggregate_id
         string event_type
         timestamptz published_at
+        int attempts
+        string last_error
+        timestamptz next_attempt_at
+    }
+    PROCESSED_EVENTS {
+        string consumer PK
+        uuid event_id PK
+    }
+    IDEMPOTENCY_KEYS {
+        uuid user_id PK
+        string key PK
+        string status
     }
 ```
 

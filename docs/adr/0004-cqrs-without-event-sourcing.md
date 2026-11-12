@@ -28,5 +28,5 @@ Use CQRS as a code boundary, not as event sourcing.
 
 | Option | Why not |
 |---|---|
-| Event sourcing | Rebuilds every payment from events, complicates idempotency and optimistic locking, and the product does not need a full audit stream as the source of truth. The outbox is already an audit of what was published. |
+| Event sourcing | Rebuilds every payment from events, complicates idempotency and optimistic locking, and the product does not need a full audit stream as the source of truth. The outbox records integration events the application intended to publish, including rows still waiting (`published_at` null). |
 | One service method that both mutates and returns entities | Leaks persistence into the API and makes the cache path share the write model. |

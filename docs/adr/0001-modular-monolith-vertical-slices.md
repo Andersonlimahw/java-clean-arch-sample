@@ -41,7 +41,10 @@ flowchart LR
     T -->|public API only| P
     A --> T
     L --> T
-    T & P & A & L -.->|errors| K
+    T -.->|errors| K
+    P -.->|errors| K
+    A -.->|errors| K
+    L -.->|errors| K
 ```
 
 **Slice rules (enforced by review, documented here):**

@@ -5,7 +5,7 @@ Operational behavior that these decisions refer to is in [../architecture.md](..
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-modular-monolith-vertical-slices.md) | Modular monolith with vertical slices (trip planner) | Superseded by [0002](0002-payments-pivot.md) (domain) and [0003](0003-modular-monolith-vs-microservices.md) (structure) |
-| [0002](0002-payments-pivot.md) | Pivot from trip planner to payments | Accepted. Supersedes 0001's domain. |
+| [0002](0002-payments-pivot.md) | Pivot from trip planner to payments | Accepted. Supersedes the domain of 0001. Structure is 0003. |
 | [0003](0003-modular-monolith-vs-microservices.md) | Modular monolith instead of microservices | Accepted. Supersedes 0001's structure. |
 | [0004](0004-cqrs-without-event-sourcing.md) | CQRS without event sourcing | Accepted |
 | [0005](0005-rabbitmq-vs-kafka.md) | RabbitMQ instead of Kafka | Accepted |
