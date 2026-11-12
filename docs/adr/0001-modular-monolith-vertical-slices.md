@@ -64,13 +64,13 @@ sequenceDiagram
     participant TS as trips::TripService
     participant PS as participants::ParticipantService
     participant DB as H2 (Flyway V1–V4)
-    C->>TC: POST /trips {destination, dates, emails_to_invite}
+    C->>TC: POST /trips with destination, dates, emails_to_invite
     TC->>TS: createTrip(payload)
     TS->>DB: INSERT trips
     TC->>PS: registerParticipantsToEvent(emails, trip)
     PS->>DB: INSERT participants (batch)
-    PS-->>TC: List&lt;Participant&gt; (saved rows only)
-    TC-->>C: 200 {uuid, participants[]}
+    PS-->>TC: saved participant rows only
+    TC-->>C: 200 with uuid and participants
 ```
 
 Package map (each box = one vertical slice, controller on top, DB at bottom):

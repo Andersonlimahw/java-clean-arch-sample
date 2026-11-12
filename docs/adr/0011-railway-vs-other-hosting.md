@@ -16,7 +16,7 @@ Prefer Railway for a first deploy of the Docker image (`railway.json`, healthche
 Documented alternatives, same image:
 
 - Render web service (`render.yaml`), with managed Postgres and an external Redis and RabbitMQ.
-- Google Cloud Run (`deploy/cloudrun/service.yaml`) only if min instances stay at 1 so the consumer and the relay are not scaled to zero between requests. Cloud Run is a weaker fit for a continuous consumer than a always-on service, which is why it is not the default.
+- Google Cloud Run (`deploy/cloudrun/service.yaml`) only if min instances stay at 1 so the consumer and the relay stay running between requests. The manifest sets `autoscaling.knative.dev/minScale` to `"1"` and `run.googleapis.com/cpu-throttling` to `"false"`. Cloud Run is a weaker fit for a continuous consumer than an always-on service, which is why it is not the default.
 
 Do not deploy this repository to Vercel Functions.
 

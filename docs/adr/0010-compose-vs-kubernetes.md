@@ -10,9 +10,9 @@ Developers need PostgreSQL, Redis, RabbitMQ, and the app on a laptop. Production
 ## Decision
 
 - `Dockerfile`: multi-stage build, non-root user `10001`, layered runtime image.
-- `docker-compose.yml`: app, PostgreSQL 16, Redis 7, RabbitMQ 3.13, healthchecks, named volumes, env from `.env.example`. This is the local and CI-shaped stack.
-- `deploy/k8s`: Kustomize base plus `staging` and `production` overlays. Deployment, Service, ConfigMap, Secret example, probes, requests and limits, HPA, PDB, NetworkPolicy, Ingress with cert-manager TLS, and a Flyway Job.
-- The Deployment does not run Flyway (`SPRING_FLYWAY_ENABLED=false` in the ConfigMap). The Job sets `SPRING_FLYWAY_ENABLED=true` and `APP_MIGRATION_ONLY=true`. The Job manifest is the migration strategy; the process honours that flag in the migration-job change, which is what makes the container exit after Flyway.
+- `docker-compose.yml`: app, PostgreSQL 16, Redis 7, RabbitMQ 3.13, healthchecks, named volumes. Variable substitution uses the process environment and a local `.env` when Docker Compose loads one. `.env.example` lists the names and is not referenced by the compose file. CI runs `docker compose config` and does not start these containers. `mvn -B clean verify` uses Testcontainers.
+- `deploy/k8s`: Kustomize base plus `staging` and `production` overlays. Deployment, Service, ConfigMap, Secret example, probes, requests and limits, HPA, PDB, NetworkPolicy, Ingress with cert-manager TLS, and a Flyway Job. CI renders both overlays through kubeconform (Kubernetes 1.30, strict).
+- The Deployment inherits `SPRING_FLYWAY_ENABLED=false` from the ConfigMap, so application pods do not migrate. The Job overrides `SPRING_FLYWAY_ENABLED=true` and sets `APP_MIGRATION_ONLY=true`. No Java source reads `APP_MIGRATION_ONLY` or `app.migration-only`. After Flyway runs as part of normal startup, the process stays up as the full application, including the web server and the relay. The Job manifest records the intended one-shot strategy; the running image does not exit when that variable is set.
 - Compose is not applied to a cluster. Kustomize is not required for `mvn spring-boot:run`.
 
 ## Consequences

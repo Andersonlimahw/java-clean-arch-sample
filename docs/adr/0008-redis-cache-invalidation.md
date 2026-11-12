@@ -11,7 +11,7 @@
 
 Cache-aside, implemented by `PaymentCacheService`:
 
-- Key prefix `payment:cache:{id}`. TTL defaults to 10 minutes (`app.cache.payment-ttl`).
+- Key `payment:cache:{id}` (`PaymentCacheService` prefix `payment:cache:` plus the id). TTL is `app.cache.payment-ttl`, default `10m` on the `@Value` in `PaymentCacheService`. `application.yml` does not set the key.
 - Miss loads from PostgreSQL and fills the cache.
 - A per-key in-process lock collapses a stampede on a single instance.
 - Confirm and cancel call `evictAfterCommit`, so a rolled-back transaction does not drop a still-valid entry, and a committed one does not keep serving the previous status.

@@ -11,11 +11,11 @@ The client that creates a payment receives `201` as soon as PostgreSQL commits. 
 
 Payment state is strongly consistent in PostgreSQL: the caller that just got `201` can `GET` the payment and see it.
 
-Notifications are eventually consistent. `GET /api/v1/notifications` can be empty for a short time after create. The UI, if any, polls or refreshes. We do not block the HTTP create on the broker.
+Notifications for `payment.created` are eventually consistent. `GET /api/v1/notifications` can be empty for a short time after create. The UI, if any, polls or refreshes. HTTP create returns after the database commit and does not wait for the broker. Confirm and cancel append outbox rows and do not produce notification rows, because those routing keys have no queue ([ADR 0005](0005-rabbitmq-vs-kafka.md)).
 
-Idempotency-Key on create is strongly consistent: the same key and body replay the stored response; a different body returns 409.
+`Idempotency-Key` on create is strongly consistent inside PostgreSQL. The same user, key, and body replay the stored response with header `Idempotent-Replayed: true`. A different body, or a key whose row is still `PROCESSING`, returns 409. Keys are scoped by `user_id`, limited to 120 characters, and stored for 24 hours.
 
-Optimistic locking on `payments.version` turns a concurrent confirm/cancel into 409. The client retries the read.
+Optimistic locking on `payments.version` turns a concurrent confirm or cancel into 409. The client retries the read.
 
 ## Consequences
 

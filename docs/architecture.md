@@ -8,7 +8,7 @@ The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payment
 
 ```mermaid
 flowchart LR
-    Client["Client<br/>HTTP JSON"] -->|":8080 /api/v1"| API["payments-platform<br/>Spring Boot 3.5 · Java 21"]
+    Client["Client<br/>HTTP JSON"] -->|":8080 /api/v1"| API["payments-platform<br/>Spring Boot 3.5.16 · Java 21"]
     API --> PG[("PostgreSQL 16<br/>source of truth")]
     API --> Redis[("Redis 7<br/>cache-aside")]
     API --> MQ["RabbitMQ 3.13<br/>payments.events"]
@@ -29,8 +29,9 @@ flowchart TB
     ID --> PG
     NTF --> PG
     SH -->|relay| MQ["RabbitMQ"]
-    MQ -->|payment.*| NTF
+    MQ -->|payment.created| NTF
     PAY -->|GET by id| Redis[("Redis")]
+    ID -->|auth rate limit| Redis
 ```
 
 ## Module map
@@ -42,8 +43,11 @@ flowchart TB
 | notifications | `com.muse.payments.notifications` | `notifications` | Learns about payments only from RabbitMQ. |
 | shared | `com.muse.payments.shared` | `outbox_events`, `processed_events`, `idempotency_keys` | Open kernel: CQRS ports, outbox, security, problem details. |
 
-Inside each business module the packages are `domain`, `application`, `infrastructure`, and `web`.
-`domain` is plain Java (ArchUnit). Application handlers are the CQRS boundary.
+`identity` and `payments` use `domain`, `application`, `infrastructure`, and `web`.
+`notifications` has `domain`, `infrastructure`, and `web`, and no `application` package.
+`NotificationController` calls `NotificationRepository` and returns the domain type `Notification`.
+`domain` is plain Java: `ArchitectureTest` allows only the JDK and other `domain` packages.
+Payment and identity commands, and the payment queries, go through application handlers. Identity has no query types.
 Infrastructure holds JPA, Redis, and RabbitMQ adapters.
 
 There is no cross-module foreign key. `payments.user_id` and `notifications.user_id` are UUID columns plus indexes. `refresh_tokens.user_id` references `users` because both tables belong to identity.
@@ -75,7 +79,7 @@ Confirm and cancel evict the key after the database transaction commits.
 
 ## HTTP contract
 
-Base path `/api/v1`. Errors are RFC 7807 `application/problem+json` with `correlationId` and no stack trace.
+Base path `/api/v1`. Errors are RFC 7807 `application/problem+json` and omit the stack trace. `CorrelationIdFilter` accepts `X-Correlation-Id` when it is 1–64 characters from `[A-Za-z0-9_-]`, otherwise generates a UUID, echoes that value on the response header, and copies it onto the problem body as `correlationId`.
 
 | Method | Path | Auth | Success |
 |---|---|---|---|
@@ -90,25 +94,55 @@ Base path `/api/v1`. Errors are RFC 7807 `application/problem+json` with `correl
 | POST | `/api/v1/payments/{id}/cancel` | Bearer, owner | 200 |
 | GET | `/api/v1/notifications` | Bearer | 200, caller's notifications |
 
-Status codes in use: 400 validation, 401 missing or invalid token, 403 role failure, 404 unknown id or another user's payment (no enumeration), 409 illegal transition, idempotency mismatch, or optimistic lock, 429 auth rate limit with `Retry-After`, 500 generic problem detail.
+Status codes the handlers return:
+
+| Status | When |
+|---|---|
+| 400 | Bean validation, malformed JSON, missing `Idempotency-Key`, or a key longer than 120 characters |
+| 401 | Missing or invalid bearer token, bad login or refresh credentials, or a disabled account (`BadCredentialsException` / `AuthenticationException`) |
+| 404 | Unknown payment id, or a payment owned by someone else |
+| 409 | Illegal payment transition, duplicate registration email, idempotency payload mismatch, idempotency key still in `PROCESSING`, optimistic lock, or `DataIntegrityViolationException` |
+| 429 | Register, login, and refresh over 20 requests per minute for the client IP. `Retry-After` is `60`. Logout has no limit. |
+| 500 | Unhandled exception, generic problem detail, no stack trace |
+
+`403` is the body produced for `AccessDeniedException`. No controller or method-security rule checks a role, so an ownership failure stays `404`. Role names travel on the access token as the `roles` claim.
+
+A repeated create with the same user, `Idempotency-Key`, and body returns the stored response and sets `Idempotent-Replayed: true`. The row is kept for 24 hours. Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments takes `page` (default 0) and `size` (default 20; a size below 1 is treated as 20, and a size above 100 is treated as 100).
 
 OpenAPI: `/v3/api-docs`. Swagger UI: `/swagger-ui.html`.
 
 ## Consistency and delivery
 
-Writes commit the aggregate and the outbox row in one transaction.
-The relay publishes later. The consumer inserts a notification and a `processed_events` row in one transaction, so a duplicate delivery does not create a second notification.
-That is at-least-once delivery plus an idempotent consumer. It is not exactly-once.
+Create, confirm, and cancel commit the aggregate and the outbox row in one transaction.
+`OutboxJpaAdapter.append` is `@Transactional(propagation = MANDATORY)`. `OutboxPort` itself is a plain interface.
+The relay (`OutboxRelayService`) is scheduled when `app.outbox.scheduling.enabled` is unset or `true`. It polls every `app.outbox.poll-interval-ms` milliseconds (default 1000) and locks up to 50 due rows (`published_at IS NULL` and `next_attempt_at <= now`) with `FOR UPDATE SKIP LOCKED`.
+It publishes to the topic exchange `payments.events` and sets `published_at` when `convertAndSend` returns. It does not wait on the correlated publisher confirm, so a later nack or unroutable return leaves `published_at` set.
 
-The relay retries publish with exponential backoff and jitter when the send throws. The queue `payments.created.notifications` is bound to `payment.created` and dead-letters to `payments.created.notifications.dlq`. The connection is configured with `publisher-confirm-type: correlated`.
+| Outbox `event_type` | Routing key | Queue |
+|---|---|---|
+| `PaymentCreated` | `payment.created` | `payments.created.notifications` |
+| `PaymentCompleted` | `payment.completed` | none |
+| `PaymentCancelled` | `payment.cancelled` | none |
+
+Confirm and cancel therefore publish an event that no queue binds. They do not create a notification.
+`PaymentNotificationConsumer` listens only on `payments.created.notifications`. It inserts the notification and a `processed_events` row (`consumer = PaymentNotificationConsumer`, primary key `(consumer, event_id)`) in one transaction. A second delivery of the same event id does not insert a second notification.
+That is at-least-once delivery plus an idempotent consumer for `payment.created`.
+
+When `convertAndSend` throws, the relay increments `attempts`, stores `last_error`, and sets `next_attempt_at` to `min(300, 2^attempts * 2 + jitter)` seconds. Jitter is an integer from 1 through 3. The delay caps at 300 seconds and the row stays eligible, so a publish that keeps failing is retried indefinitely at that cap.
+
+`payments.created.notifications` is a durable queue with dead-letter exchange `payments.events.dlx` (direct) and dead-letter routing key `payment.created.dlq`, bound to the durable queue `payments.created.notifications.dlq`.
+`RabbitMqConfig` does not change `defaultRequeueRejected`. Processing failures in `PaymentNotificationConsumer` are rethrown as `RuntimeException`, and Spring's default error handler requeues that onto `payments.created.notifications`. The queue has no message TTL or max length. Spring rejects without requeue for message-conversion and argument-resolution failures; this listener takes a `String` payload and optional headers, and it turns JSON problems into `RuntimeException`, so those messages are requeued rather than dead-lettered. A payload that parses but is missing `paymentId`, `userId`, `amount`, or `currency` is acknowledged and dropped after `processed_events` records the event id.
+`spring.rabbitmq.publisher-confirm-type` is `correlated`, `publisher-returns` is true, and the `RabbitTemplate` is mandatory.
 
 ## Boundaries
 
-`ApplicationModules.of(PaymentsApplication.class).verify()` and `ArchitectureTest` run in the build.
-Domain types do not depend on Spring, JPA, Redis, or RabbitMQ.
-Constructor injection only.
+`ModularityTest` calls `ApplicationModules.of(PaymentsApplication.class).verify()`.
+`ArchitectureTest` rejects `@Autowired` fields and any `domain` dependency outside the JDK and `domain` packages, which keeps Spring, JPA, Redis, and RabbitMQ out of the domain.
+Production types take dependencies by constructor. The field-injection rule does not scan tests.
 
 ## Data model
+
+Selected columns. The Flyway scripts are the full schema.
 
 ```mermaid
 erDiagram
@@ -141,4 +175,4 @@ erDiagram
     }
 ```
 
-Flyway migrations are append-only: `V1` shared outbox and idempotency, `V2` identity, `V3` payments, `V4` notifications.
+Flyway migrations are append-only: `V1` `outbox_events`, `processed_events`, and `idempotency_keys`; `V2` identity; `V3` payments; `V4` notifications.

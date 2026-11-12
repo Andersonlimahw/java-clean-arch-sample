@@ -11,8 +11,9 @@ Payment commands (`create`, `confirm`, `cancel`) enforce a state machine and opt
 
 Use CQRS as a code boundary, not as event sourcing.
 
-- Commands are `*Command` + `*CommandHandler`. They load the aggregate, enforce invariants, save the current row, and append integration events.
-- Queries are `*Query` + `*QueryHandler` and return records (`PaymentResponse`), not entities.
+- Payment commands are `*Command` + `*CommandHandler`. The handler enforces invariants, saves the current row, and appends integration events. Identity commands use the same handler types and do not write the outbox.
+- Payment queries are `*Query` + `*QueryHandler` and return records (`PaymentResponse`). Identity has commands only; `RegisterCommandHandler` returns `UserResponse`, and login and refresh return `AuthTokensResponse`.
+- `GET /api/v1/notifications` is the exception: `NotificationController` calls `NotificationRepository` and returns the domain type `Notification`. That module has no `application` package.
 - The `payments` table stores the current state. `version` is the optimistic lock.
 - Domain events are transient inside the aggregate and are translated to outbox rows before the transaction commits. They are not the system of record.
 

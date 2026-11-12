@@ -8,7 +8,7 @@
 
 The platform is one product with three business modules that share a transaction boundary: a payment and its outbox row must commit together. The team is one deployable, one database, and one on-call surface. Splitting identity, payments, and notifications into services would add network failures, distributed transactions, and independent schema deploys before there is a scaling hotspot that requires them.
 
-ADR 0001 reached the same shape for the old trip planner and is superseded as a domain document. The rule set still applies, with payments module names.
+[ADR 0002](0002-payments-pivot.md) retired the trip-planner domain. This ADR supersedes the structural decision in [ADR 0001](0001-modular-monolith-vertical-slices.md): one deployable and one owner per module remain, and cross-module writes go through the outbox instead of another module's service API.
 
 ## Decision
 
