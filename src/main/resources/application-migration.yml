@@ -1,0 +1,23 @@
+# Activated by PaymentsApplication when APP_MIGRATION_ONLY=true.
+# The process applies Flyway and exits. It does not serve HTTP or consume messages.
+spring:
+  main:
+    web-application-type: none
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+  flyway:
+    enabled: true
+
+app:
+  outbox:
+    scheduling:
+      enabled: false
+
+management:
+  health:
+    rabbit:
+      enabled: false
+    redis:
+      enabled: false

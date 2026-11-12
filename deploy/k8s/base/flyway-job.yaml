@@ -23,6 +23,8 @@ spec:
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
+            # PaymentsApplication adds the migration profile and exits after Flyway.
+            # The Deployment keeps SPRING_FLYWAY_ENABLED=false so replicas do not migrate.
             - name: APP_MIGRATION_ONLY
               value: "true"
           resources:
