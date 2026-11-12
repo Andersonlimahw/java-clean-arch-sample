@@ -92,7 +92,7 @@ class FraudScreeningResilienceTest {
         String instance = properties.resilienceInstance();
         assertThat(instance).isEqualTo("fraudScreening");
         assertThat(timeLimiterRegistry.timeLimiter(instance).getTimeLimiterConfig().getTimeoutDuration())
-                .isEqualTo(Duration.ofMillis(200));
+                .isEqualTo(Duration.ofSeconds(1));
         assertThat(retryRegistry.retry(instance).getRetryConfig().getMaxAttempts()).isEqualTo(3);
         var predicate = retryRegistry.retry(instance).getRetryConfig().getExceptionPredicate();
         assertThat(predicate.test(new FraudTransientException("down"))).isTrue();
@@ -122,13 +122,13 @@ class FraudScreeningResilienceTest {
     }
 
     @Test
-    @Timeout(8)
+    @Timeout(15)
     @DisplayName("A slow provider trips the time limiter on every attempt, then the explicit under-review fallback")
     void slowProviderTripsTimeLimiterAndFallsBack() {
         SERVER.stubFor(post(urlEqualTo(HttpFraudScreeningAdapter.SCREENING_PATH))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withFixedDelay(5_000)
+                        .withFixedDelay(8_000)
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"outcome\":\"CLEAR\"}")));
 
@@ -140,7 +140,7 @@ class FraudScreeningResilienceTest {
 
         assertThat(result.outcome()).isEqualTo(FraudScreeningOutcome.UNDER_REVIEW);
         assertThat(result.reason()).isEqualTo(HttpFraudScreeningAdapter.FALLBACK_EXHAUSTED);
-        assertThat(elapsedMs).isLessThan(3_000);
+        assertThat(elapsedMs).isLessThan(4_500);
         verifyRequests(request, 3);
         assertThat(count("resilience4j.timelimiter.calls", "timeout")).isEqualTo(timeouts + 3);
         assertThat(circuitBreakerRegistry.circuitBreaker(properties.resilienceInstance()).getState())

@@ -53,5 +53,6 @@ resilience4j:
   timelimiter:
     instances:
       fraudScreening:
-        timeout-duration: 200ms
+        # Above a cold JDK HTTP client on CI. The slow-provider test delays longer than this.
+        timeout-duration: 1s
         cancel-running-future: true
