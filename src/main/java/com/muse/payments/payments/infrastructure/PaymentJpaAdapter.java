@@ -2,7 +2,9 @@ package com.muse.payments.payments.infrastructure;
 
 import com.muse.payments.payments.domain.Payment;
 import com.muse.payments.payments.domain.PaymentRepository;
+import com.muse.payments.payments.domain.PaymentSort;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -32,9 +34,13 @@ public class PaymentJpaAdapter implements PaymentRepository {
     }
 
     @Override
-    public List<Payment> findByUserId(UUID userId, int page, int size) {
-        return paymentJpaRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size))
-                .getContent()
+    public List<Payment> findByUserId(UUID userId, int page, int size, PaymentSort sort) {
+        Objects.requireNonNull(sort, "sort must not be null");
+        Sort order = switch (sort) {
+            case CREATED_AT_ASC -> Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
+            case CREATED_AT_DESC -> Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        };
+        return paymentJpaRepository.findByUserId(userId, PageRequest.of(page, size, order))
                 .stream()
                 .map(PaymentJpaEntity::toDomain)
                 .toList();

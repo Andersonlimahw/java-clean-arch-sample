@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 @Service
@@ -36,7 +37,7 @@ public class PaymentCacheService implements PaymentCachePort {
     private final Counter errorCounter;
     private final Timer latencyTimer;
 
-    private final ConcurrentHashMap<UUID, Object> keyLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Flight> flights = new ConcurrentHashMap<>();
 
     public PaymentCacheService(
             StringRedisTemplate redisTemplate,
@@ -126,25 +127,38 @@ public class PaymentCacheService implements PaymentCachePort {
             return cached.get();
         }
 
-        // Cache Stampede guard: synchronize per paymentId
-        Object lock = keyLocks.computeIfAbsent(paymentId, k -> new Object());
-        synchronized (lock) {
-            try {
-                // Double-checked locking
-                Optional<PaymentResponse> doubleChecked = get(paymentId);
-                if (doubleChecked.isPresent()) {
-                    return doubleChecked.get();
-                }
-
-                PaymentResponse loaded = dbLoader.get();
-                if (loaded != null) {
-                    put(paymentId, loaded);
-                }
-                return loaded;
-            } finally {
-                keyLocks.remove(paymentId, lock);
+        Flight flight = flights.compute(paymentId, (id, existing) -> {
+            Flight current = existing != null ? existing : new Flight();
+            current.waiters++;
+            return current;
+        });
+        flight.lock.lock();
+        try {
+            Optional<PaymentResponse> doubleChecked = get(paymentId);
+            if (doubleChecked.isPresent()) {
+                return doubleChecked.get();
             }
+
+            PaymentResponse loaded = dbLoader.get();
+            if (loaded != null) {
+                put(paymentId, loaded);
+            }
+            return loaded;
+        } finally {
+            flight.lock.unlock();
+            flights.compute(paymentId, (id, existing) -> {
+                if (existing != flight) {
+                    return existing;
+                }
+                existing.waiters--;
+                return existing.waiters == 0 ? null : existing;
+            });
         }
+    }
+
+    private static final class Flight {
+        private final ReentrantLock lock = new ReentrantLock();
+        private int waiters;
     }
 
     private String buildKey(UUID paymentId) {

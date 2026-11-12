@@ -95,17 +95,12 @@ public class AuthController {
     }
 
     private void checkRateLimit(HttpServletRequest request) {
-        String clientIp = extractClientIp(request);
+        String clientIp = request.getRemoteAddr();
+        if (clientIp == null || clientIp.isBlank()) {
+            clientIp = "anonymous";
+        }
         if (!rateLimiter.tryAcquire(clientIp)) {
             throw new RateLimitExceededException("Too many authentication attempts. Please retry later.", 60);
         }
-    }
-
-    private String extractClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 }

@@ -114,7 +114,8 @@ class CreatePaymentUseCaseTest {
         }
 
         @Override
-        public List<com.muse.payments.payments.domain.Payment> findByUserId(UUID userId, int page, int size) {
+        public List<com.muse.payments.payments.domain.Payment> findByUserId(
+                UUID userId, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
             return List.of();
         }
 

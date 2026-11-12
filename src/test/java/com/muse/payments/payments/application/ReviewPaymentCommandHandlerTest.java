@@ -61,7 +61,8 @@ class ReviewPaymentCommandHandlerTest {
             }
 
             @Override
-            public java.util.List<Payment> findByUserId(UUID userId, int page, int size) {
+            public java.util.List<Payment> findByUserId(
+                    UUID userId, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
                 return java.util.List.of();
             }
 

@@ -10,7 +10,7 @@ public interface PaymentRepository {
 
     Optional<Payment> findById(UUID id);
 
-    List<Payment> findByUserId(UUID userId, int page, int size);
+    List<Payment> findByUserId(UUID userId, int page, int size, PaymentSort sort);
 
     long countByUserId(UUID userId);
 }
