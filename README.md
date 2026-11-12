@@ -39,7 +39,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 ## Quickstart
 
 ### Prerequisites
-- JDK 25+
+- JDK 25
 - Maven 3.9+
 - Docker Engine (for Testcontainers and local compose)
 
