@@ -229,6 +229,7 @@ public class OutboxRelayService {
             case "PaymentCreated" -> RabbitMqConfig.ROUTING_KEY_PAYMENT_CREATED;
             case "PaymentCompleted" -> RabbitMqConfig.ROUTING_KEY_PAYMENT_COMPLETED;
             case "PaymentCancelled" -> RabbitMqConfig.ROUTING_KEY_PAYMENT_CANCELLED;
+            case "PaymentHeldForReview" -> RabbitMqConfig.ROUTING_KEY_PAYMENT_HELD;
             default -> "payment." + eventType.toLowerCase();
         };
     }

@@ -14,3 +14,37 @@ management:
   otlp:
     tracing:
       endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:${OTEL_EXPORTER_OTLP_ENDPOINT:}}
+
+app:
+  fraud-screening:
+    # No default. Boot fails when FRAUD_SCREENING_BASE_URL is missing. The scheme must be https.
+    base-url: ${FRAUD_SCREENING_BASE_URL}
+    connect-timeout: 200ms
+    read-timeout: 2s
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      fraudScreening:
+        sliding-window-size: 20
+        minimum-number-of-calls: 20
+        failure-rate-threshold: 40
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  bulkhead:
+    instances:
+      fraudScreening:
+        max-concurrent-calls: 50
+  retry:
+    instances:
+      fraudScreening:
+        max-attempts: 2
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+  timelimiter:
+    instances:
+      fraudScreening:
+        timeout-duration: 400ms

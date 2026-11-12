@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -86,6 +87,45 @@ class PaymentTest {
         assertThat(event.paymentId()).isEqualTo(payment.getId());
         assertThat(event.userId()).isEqualTo(userId);
         assertThat(event.reason()).isEqualTo("Out of stock");
+    }
+
+    @Test
+    @DisplayName("A payment held for fraud review cannot be confirmed and can be cancelled")
+    void underReview_cannotBeCompletedAndCanBeCancelled() {
+        Payment held = Payment.createUnderReview(
+                UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "provider unavailable");
+
+        assertThat(held.getStatus()).isEqualTo(PaymentStatus.UNDER_REVIEW);
+        assertThatThrownBy(held::complete)
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Cannot complete payment in status: UNDER_REVIEW");
+
+        held.cancel("Review abandoned");
+        assertThat(held.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("A review can release a held payment to PENDING or reject it")
+    void reviewReleasesOrRejectsAHeldPayment() {
+        Payment released = Payment.createUnderReview(
+                UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
+        released.pullDomainEvents();
+        UUID reviewer = UUID.randomUUID();
+        released.releaseFromReview(reviewer, Instant.now());
+        assertThat(released.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(released.getScreeningReason()).isNull();
+        assertThat(released.getHeldReason()).isEqualTo("down");
+        assertThat(released.getReviewerId()).isEqualTo(reviewer);
+        assertThat(released.pullDomainEvents()).singleElement().isInstanceOf(PaymentCreatedEvent.class);
+
+        Payment rejected = Payment.createUnderReview(
+                UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
+        rejected.pullDomainEvents();
+        rejected.rejectFromReview(reviewer, Instant.now(), "Rejected in fraud review");
+        assertThat(rejected.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        var rejectedEvents = rejected.pullDomainEvents();
+        assertThat(rejectedEvents.getFirst()).isInstanceOf(PaymentCancelledEvent.class);
+        assertThat(((PaymentCancelledEvent) rejectedEvents.getFirst()).reason()).isEqualTo("Rejected in fraud review");
     }
 
     @Test

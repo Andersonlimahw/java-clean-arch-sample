@@ -1,5 +1,6 @@
 package com.muse.payments.shared.infrastructure.idempotency;
 
+import com.muse.payments.shared.application.IdempotencyPort;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -46,7 +47,7 @@ public class JdbcIdempotencyRepository implements IdempotencyRepository {
     }
 
     @Override
-    public Optional<UUID> tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl) {
+    public Optional<ProcessingLease> tryInsertProcessing(UUID userId, String key, String requestHash, Duration ttl) {
         String sql = """
                 INSERT INTO idempotency_keys (key, user_id, request_hash, status, created_at, expires_at, lease_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -74,31 +75,33 @@ public class JdbcIdempotencyRepository implements IdempotencyRepository {
                     Timestamp.from(expiresAt),
                     leaseId
             );
-            return rowsAffected > 0 ? Optional.of(leaseId) : Optional.empty();
+            return rowsAffected > 0 ? Optional.of(new ProcessingLease(leaseId, now)) : Optional.empty();
         } catch (DuplicateKeyException e) {
             return Optional.empty();
         }
     }
 
     @Override
-    public int markCompleted(UUID userId, String key, String requestHash, UUID leaseId, int responseCode, String responseBodyJson) {
+    public int markCompleted(UUID userId, String key, String requestHash, UUID leaseId, Integer responseCode, String responseBodyJson) {
         Objects.requireNonNull(leaseId, "leaseId must not be null");
         String sql = """
                 UPDATE idempotency_keys
-                SET status = ?, response_code = ?, response_body = CAST(? AS JSONB)
+                SET status = ?, response_code = ?, response_body = CAST(? AS JSONB), expires_at = ?
                 WHERE user_id = ? AND key = ? AND status = ? AND request_hash = ? AND lease_id = ? AND expires_at > ?
                 """;
+        Instant now = Instant.now();
         return jdbcTemplate.update(
                 sql,
                 IdempotencyRecord.STATUS_COMPLETED,
                 responseCode,
                 responseBodyJson,
+                Timestamp.from(now.plus(IdempotencyPort.COMPLETED_TTL)),
                 userId,
                 key,
                 IdempotencyRecord.STATUS_PROCESSING,
                 requestHash,
                 leaseId,
-                Timestamp.from(Instant.now())
+                Timestamp.from(now)
         );
     }
 

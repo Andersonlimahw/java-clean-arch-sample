@@ -28,6 +28,13 @@ Tests set `management.tracing.enabled=false` so the suite does not need a collec
 | `payments.cache.hits` / `payments.cache.misses` / `payments.cache.errors` | counters | Cache-aside outcomes. |
 | `payments.cache.latency` | timer | Cache read latency. |
 | `http.server.requests` | timer | API latency and status. SLO buckets at 100ms, 300ms, 500ms, and 1s. |
+| `resilience4j.circuitbreaker.calls{name="fraudScreening"}` | timer | Fraud-screening circuit breaker calls (`kind` is `successful`, `failed`, or `ignored`). Each retry attempt is one call. |
+| `payments.fraud.screening.unexpected_client_errors` | counter | Provider HTTP responses that were not an explicit decline and not a transient error. These 4xx responses are a circuit-breaker success, so a permanent 401 never opens the circuit. Suggested alert: `increase(payments_fraud_screening_unexpected_client_errors_total[5m]) > 0`. |
+| `payments.fraud.screening.in.flight` | gauge | Fraud-screening HTTP calls currently running on the virtual-thread executor. |
+| `resilience4j.bulkhead.available.concurrent.calls{name="fraudScreening"}` | gauge | Permits left in the fraud-screening semaphore. `max-concurrent-calls` is set per profile. |
+| `resilience4j.circuitbreaker.not.permitted.calls{name="fraudScreening"}` | counter | Calls rejected because the fraud-screening circuit was open. |
+| `resilience4j.retry.calls{name="fraudScreening"}` | counter | Fraud-screening retries. `failed_with_retry` is an exhausted transient call. `failed_without_retry` is an exception that is not retried, such as an open circuit or a full bulkhead. A provider 4xx is not an exception and does not increment this meter. |
+| `resilience4j.timelimiter.calls{name="fraudScreening"}` | counter | Fraud-screening timeouts (`kind="timeout"`). |
 
 Prometheus names replace `.` with `_` (`payments_outbox_pending`).
 

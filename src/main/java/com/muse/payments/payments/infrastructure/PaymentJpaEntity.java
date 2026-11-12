@@ -1,5 +1,6 @@
 package com.muse.payments.payments.infrastructure;
 
+import com.muse.payments.payments.application.OutboundText;
 import com.muse.payments.payments.domain.Money;
 import com.muse.payments.payments.domain.Payment;
 import com.muse.payments.payments.domain.PaymentStatus;
@@ -50,6 +51,18 @@ public class PaymentJpaEntity {
     @Column(name = "version")
     private Long version;
 
+    @Column(name = "screening_reason", length = 500)
+    private String screeningReason;
+
+    @Column(name = "held_reason", length = 500)
+    private String heldReason;
+
+    @Column(name = "reviewer_id")
+    private UUID reviewerId;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
     public PaymentJpaEntity() {
     }
 
@@ -62,7 +75,11 @@ public class PaymentJpaEntity {
             PaymentStatus status,
             Instant createdAt,
             Instant updatedAt,
-            Long version
+            Long version,
+            String screeningReason,
+            String heldReason,
+            UUID reviewerId,
+            Instant reviewedAt
     ) {
         this.id = id;
         this.userId = userId;
@@ -73,6 +90,10 @@ public class PaymentJpaEntity {
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.version = version;
+        this.screeningReason = OutboundText.limit(screeningReason);
+        this.heldReason = OutboundText.limit(heldReason);
+        this.reviewerId = reviewerId;
+        this.reviewedAt = reviewedAt;
     }
 
     public static PaymentJpaEntity fromDomain(Payment payment) {
@@ -86,7 +107,11 @@ public class PaymentJpaEntity {
                 payment.getStatus(),
                 payment.getCreatedAt(),
                 payment.getUpdatedAt(),
-                payment.getVersion()
+                payment.getVersion(),
+                payment.getScreeningReason(),
+                payment.getHeldReason(),
+                payment.getReviewerId(),
+                payment.getReviewedAt()
         );
     }
 
@@ -99,7 +124,11 @@ public class PaymentJpaEntity {
                 this.status,
                 this.createdAt,
                 this.updatedAt,
-                this.version
+                this.version,
+                this.screeningReason,
+                this.heldReason,
+                this.reviewerId,
+                this.reviewedAt
         );
     }
 

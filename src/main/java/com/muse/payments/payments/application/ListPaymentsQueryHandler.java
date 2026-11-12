@@ -30,16 +30,7 @@ public class ListPaymentsQueryHandler implements QueryHandler<ListPaymentsQuery,
 
         int page = query.page();
         int size = query.size();
-        if (page < 0) {
-            throw new ValidationException("page must be greater than or equal to 0");
-        }
-        if (size < 1 || size > MAX_PAGE_SIZE) {
-            throw new ValidationException("size must be between 1 and 100");
-        }
-        if ((long) page * (long) size > MAX_OFFSET) {
-            throw new ValidationException("page is too large; page * size must be <= " + MAX_OFFSET);
-        }
-        PaymentSort sort = PaymentSorts.parse(query.sort());
+        PaymentSort sort = validated(page, size, query.sort());
 
         List<Payment> payments = paymentRepository.findByUserId(query.userId(), page, size, sort);
         long total = paymentRepository.countByUserId(query.userId());
@@ -49,5 +40,18 @@ public class ListPaymentsQueryHandler implements QueryHandler<ListPaymentsQuery,
                 .toList();
 
         return PageResponse.of(dtos, page, size, total, PaymentSorts.canonical(sort));
+    }
+
+    static PaymentSort validated(int page, int size, String sort) {
+        if (page < 0) {
+            throw new ValidationException("page must be greater than or equal to 0");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new ValidationException("size must be between 1 and 100");
+        }
+        if ((long) page * (long) size > MAX_OFFSET) {
+            throw new ValidationException("page is too large; page * size must be <= " + MAX_OFFSET);
+        }
+        return PaymentSorts.parse(sort);
     }
 }

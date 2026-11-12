@@ -105,6 +105,12 @@ public class PaymentNotificationConsumer {
                     requiredDecimal(data, "amount"),
                     requiredText(data, "currency")
             );
+            case "PaymentHeldForReview" -> Notification.paymentHeldForReview(
+                    userId,
+                    paymentId,
+                    requiredDecimal(data, "amount"),
+                    requiredText(data, "currency")
+            );
             case "PaymentCompleted" -> Notification.paymentCompleted(userId, paymentId);
             case "PaymentCancelled" -> Notification.paymentCancelled(
                     userId,

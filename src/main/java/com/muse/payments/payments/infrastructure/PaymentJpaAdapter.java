@@ -3,6 +3,7 @@ package com.muse.payments.payments.infrastructure;
 import com.muse.payments.payments.domain.Payment;
 import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentSort;
+import com.muse.payments.payments.domain.PaymentStatus;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
@@ -35,12 +36,7 @@ public class PaymentJpaAdapter implements PaymentRepository {
 
     @Override
     public List<Payment> findByUserId(UUID userId, int page, int size, PaymentSort sort) {
-        Objects.requireNonNull(sort, "sort must not be null");
-        Sort order = switch (sort) {
-            case CREATED_AT_ASC -> Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
-            case CREATED_AT_DESC -> Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
-        };
-        return paymentJpaRepository.findByUserId(userId, PageRequest.of(page, size, order))
+        return paymentJpaRepository.findByUserId(userId, page(page, size, sort))
                 .stream()
                 .map(PaymentJpaEntity::toDomain)
                 .toList();
@@ -49,5 +45,28 @@ public class PaymentJpaAdapter implements PaymentRepository {
     @Override
     public long countByUserId(UUID userId) {
         return paymentJpaRepository.countByUserId(userId);
+    }
+
+    @Override
+    public List<Payment> findByStatus(PaymentStatus status, int page, int size, PaymentSort sort) {
+        Objects.requireNonNull(status, "status must not be null");
+        return paymentJpaRepository.findByStatus(status, page(page, size, sort))
+                .stream()
+                .map(PaymentJpaEntity::toDomain)
+                .toList();
+    }
+
+    @Override
+    public long countByStatus(PaymentStatus status) {
+        return paymentJpaRepository.countByStatus(status);
+    }
+
+    private static PageRequest page(int page, int size, PaymentSort sort) {
+        Objects.requireNonNull(sort, "sort must not be null");
+        Sort order = switch (sort) {
+            case CREATED_AT_ASC -> Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
+            case CREATED_AT_DESC -> Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        };
+        return PageRequest.of(page, size, order);
     }
 }

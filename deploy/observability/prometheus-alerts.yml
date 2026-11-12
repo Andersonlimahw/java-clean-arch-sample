@@ -56,6 +56,15 @@ groups:
           summary: p95 of GET /api/v1/payments/{id} is above 300 ms
           description: Uses the http.server.requests SLO buckets (100ms, 300ms, 500ms, 1s). uri is the MVC pattern.
 
+      - alert: FraudScreeningUnexpectedClientError
+        expr: increase(payments_fraud_screening_unexpected_client_errors_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Fraud screening returned a client error that is not a decline
+          description: Other 4xx responses count as a circuit-breaker success, so a permanent 401 never opens the circuit. Investigate the provider credentials or contract.
+
       - alert: ApiErrorRateHigh
         expr: |
           (

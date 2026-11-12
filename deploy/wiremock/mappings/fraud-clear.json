@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/v1/screenings"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "outcome": "CLEAR"
+    }
+  }
+}
