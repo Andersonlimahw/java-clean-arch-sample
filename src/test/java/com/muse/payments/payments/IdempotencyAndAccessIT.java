@@ -1,6 +1,5 @@
 package com.muse.payments.payments;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.TestcontainersBase;
 import com.muse.payments.payments.application.CreatePaymentRequest;
@@ -356,15 +355,7 @@ class IdempotencyAndAccessIT extends TestcontainersBase {
     }
 
     private String createPayment(String token, String key, CreatePaymentRequest request) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/payments")
-                        .header("Authorization", "Bearer " + token)
-                        .header("Idempotency-Key", key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
-                .andReturn();
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        return body.get("id").asText();
+        return PaymentHttp.createdPaymentId(mockMvc, objectMapper, token, key, request);
     }
 
     private void expireKey(UUID userId, String key) {

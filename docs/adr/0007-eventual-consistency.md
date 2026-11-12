@@ -15,7 +15,7 @@ Notifications for `payment.created`, `payment.completed`, and `payment.cancelled
 
 `Idempotency-Key` on create is strongly consistent inside PostgreSQL. The same user, key, and body replay the stored response with header `Idempotent-Replayed: true`. A different body, or a key whose row is still `PROCESSING`, returns 409. Keys are scoped by `user_id` and limited to 120 characters. `expires_at` is set 24 hours ahead. `JdbcIdempotencyRepository.find` does not compare `expires_at`, and no job deletes expired rows, so the stored response still replays after that time.
 
-Optimistic locking on `payments.version` turns a concurrent confirm or cancel into 409. The client retries the read.
+Optimistic locking on `payments.version` turns overlapping confirm or cancel transactions into 409 `urn:problem-type:concurrent-modification`. There is no `ETag` or `If-Match`; the check covers only the read-modify-write inside the transaction. A request that starts after the winner commits hits the state machine (`urn:problem-type:409`). Deadlock and serialization failure are 503 `urn:problem-type:transient-lock` with `Retry-After`.
 
 ## Consequences
 

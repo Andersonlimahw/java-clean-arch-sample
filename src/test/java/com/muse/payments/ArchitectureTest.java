@@ -35,6 +35,12 @@ class ArchitectureTest {
             .as("Domain classes must not be annotated with Spring or JPA annotations");
 
     @ArchTest
+    static final ArchRule web_should_not_depend_on_hibernate = noClasses()
+            .that().resideInAPackage("..web..")
+            .should().dependOnClassesThat().resideInAPackage("org.hibernate..")
+            .as("Web adapters must not depend on Hibernate");
+
+    @ArchTest
     static final ArchRule application_should_not_depend_on_web_or_infra_entities = noClasses()
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAnyPackage(
