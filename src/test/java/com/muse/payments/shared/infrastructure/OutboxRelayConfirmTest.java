@@ -1,6 +1,8 @@
 package com.muse.payments.shared.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.muse.payments.shared.infrastructure.observability.W3cTraceContextPropagation;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Message;
@@ -97,6 +99,8 @@ class OutboxRelayConfirmTest {
                 mock(OutboxJpaRepository.class),
                 mock(RabbitTemplate.class),
                 new ObjectMapper(),
+                mock(W3cTraceContextPropagation.class),
+                new SimpleMeterRegistry(),
                 mock(PlatformTransactionManager.class),
                 timeout
         );

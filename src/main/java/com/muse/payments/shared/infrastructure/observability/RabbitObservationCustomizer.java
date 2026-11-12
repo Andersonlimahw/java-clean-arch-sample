@@ -6,8 +6,10 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.stereotype.Component;
 
 /**
- * Turns on Micrometer observations for the existing Rabbit template and listener factory
- * so HTTP traces continue as W3C {@code traceparent} headers on published and consumed messages.
+ * Enables Micrometer observations on the application's Rabbit template and listener factory.
+ * Publish writes the current trace as a W3C {@code traceparent}, and consume restores it.
+ * The outbox relay restores the trace captured when the row was appended, because the HTTP
+ * span has already ended before the scheduler publishes.
  */
 @Component
 public class RabbitObservationCustomizer implements BeanPostProcessor {
