@@ -19,6 +19,9 @@ management:
       enabled: false
 
 app:
+  outbox:
+    scheduling:
+      enabled: false
   jwt:
     issuer: https://test.payments.muse.com
     audience: payments-api-test

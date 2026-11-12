@@ -10,30 +10,33 @@ Payments publishes integration events through the transactional outbox. The rela
 | Routing keys | `payment.created`, `payment.completed`, `payment.cancelled` |
 | Queue | `payments.created.notifications` (all three keys) |
 | Dead-letter exchange | `payments.events.dlx` |
+| Dead-letter routing key | `payment.created.dlq` |
 | Dead-letter queue | `payments.created.notifications.dlq` |
 
-The queue name stayed as introduced in the merged messaging PR so existing bindings and tests keep working. Completed and cancelled events are additional bindings on that queue.
+The queue name and the dead-letter routing key stayed as introduced when the queue only carried `payment.created`. Completed and cancelled events are additional bindings on that same queue, and every notification reject uses the same dead-letter routing key. Existing bindings keep working; the names do not mean only created events are dead-lettered.
 
 ## Outbox relay
 
 1. The aggregate transaction inserts `outbox_events` and the business row together (`Propagation.MANDATORY`).
-2. `OutboxRelayService` claims a batch with `SELECT … FOR UPDATE SKIP LOCKED`.
-3. Each row is published with correlated publisher confirms (`spring.rabbitmq.publisher-confirm-type=correlated`) and `mandatory=true`.
-4. `published_at` is set only after the broker acks and does not return the message.
-5. A nack, return, or confirm timeout increments `attempts`, stores `last_error`, and schedules the next attempt with exponential backoff plus 1–3 seconds of jitter, capped at 300 seconds.
-6. The row stays unpublished until a later attempt succeeds, so a crash between commit and ack cannot drop the event. A timeout after the broker actually accepted the message can publish a duplicate; the consumer treats that as a no-op.
+2. `OutboxRelayService` claims one due row at a time with `SELECT … FOR UPDATE SKIP LOCKED`, moves `next_attempt_at` forward by the confirm timeout plus 10 seconds, and commits. The row lock is not held while waiting for the broker. Another relay skips the row until that lease expires, so two relays do not publish it at the same time.
+3. Each attempt is published with its own confirm correlation id (`spring.rabbitmq.publisher-confirm-type=correlated`, `publisher-returns=true`, `mandatory=true`). The outbox id is only the `X-Event-Id` header. A late ack or return from a timed-out attempt cannot be applied to the next attempt.
+4. A short transaction sets `published_at` only after the broker acks and does not return the message. `attempts` stays unchanged on success.
+5. A nack, return, or confirm timeout increments `attempts`, stores `last_error`, and schedules the next attempt with exponential backoff plus 1–3 seconds of jitter, capped at 300 seconds. There is no attempt ceiling: the row stays unpublished until a later attempt succeeds.
+6. A crash after the broker accepted the message and before `published_at` commits publishes a duplicate once the lease expires. The consumer treats that as a no-op. A crash during the confirm wait leaves the row leased, then eligible again. An interrupt stops the rest of the batch and leaves the interrupt flag set.
+
+Confirm correlation is per attempt. Publisher returns must stay enabled; RabbitMQ acks a mandatory message it could not route, and the return is what keeps that row unpublished.
 
 ## Consumer
 
-`PaymentNotificationConsumer` stores one notification per `(consumer, event_id)` in `processed_events` in the same transaction as the notification insert.
+`PaymentNotificationConsumer` stores one notification per `(consumer, event_id)` in `processed_events` in the same transaction as the notification insert. The event id is `X-Event-Id`, or a body `eventId` when the header is absent. `paymentId` is not an event id: created, completed, and cancelled events for one payment must all be stored.
 
 - A duplicate `event_id` is acknowledged and ignored.
-- Transient failures (for example a database error) are retried by the listener with exponential backoff and jitter (`app.messaging.listener-*`, overridable with `LISTENER_MAX_ATTEMPTS`, `LISTENER_INITIAL_INTERVAL_MS`, `LISTENER_MULTIPLIER`, `LISTENER_MAX_INTERVAL_MS`).
-- After the attempt budget is exhausted the message is rejected without requeue and RabbitMQ routes it to the DLQ.
-- Permanent failures (invalid JSON, missing identifiers, unknown event type) are rejected immediately via `AmqpRejectAndDontRequeueException` and land on the DLQ without a retry storm.
+- A missing or invalid event id, a missing event type, invalid JSON, a non-object payload, missing identifiers, or an unknown event type is rejected immediately via `AmqpRejectAndDontRequeueException`. The processed-event insert rolls back with the listener transaction, so a later valid delivery of that id is not treated as a duplicate.
+- Transient failures (for example a database error) are retried by the listener with exponential backoff and jitter (`app.messaging.listener-*`, overridable with `LISTENER_MAX_ATTEMPTS`, `LISTENER_INITIAL_INTERVAL_MS`, `LISTENER_MULTIPLIER`, `LISTENER_MAX_INTERVAL_MS`). The cap in `LISTENER_MAX_INTERVAL_MS` is a hard cap. This retry advice is on the listener container factory. `spring.rabbitmq.listener.simple.retry` is not the retry mechanism.
+- After the attempt budget is exhausted the message is rejected without requeue and RabbitMQ routes it to the DLQ. `defaultRequeueRejected` is false.
 
 Headers propagated from the outbox: `X-Correlation-Id`, `X-Event-Id`, `X-Event-Type`, `X-Aggregate-Type`, `X-Aggregate-Id`. Listener observation is enabled so a W3C `traceparent` is added when tracing is on.
 
 ## What this does not promise
 
-A message can be delivered more than once. Side effects are safe because of the processed-event primary key. Messages on the DLQ stay there until an operator inspects them; there is no automatic replay.
+A message can be delivered more than once. Side effects are safe because of the processed-event primary key. Messages on the DLQ stay there until an operator inspects them; there is no automatic replay. An unpublished outbox row is retried indefinitely with the delay capped at 300 seconds.

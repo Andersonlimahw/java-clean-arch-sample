@@ -41,7 +41,7 @@ public class PaymentNotificationConsumer {
         this.objectMapper = Objects.requireNonNull(objectMapper);
     }
 
-    @RabbitListener(queues = RabbitMqConfig.QUEUE_PAYMENT_CREATED_NOTIFICATIONS)
+    @RabbitListener(queues = RabbitMqConfig.QUEUE_PAYMENT_NOTIFICATIONS)
     @Transactional
     public void onPaymentEvent(
             @Payload String payloadJson,
@@ -56,6 +56,10 @@ public class PaymentNotificationConsumer {
         try {
             Map<String, Object> data = readPayload(payloadJson);
             UUID eventId = resolveEventId(eventIdHeader, data);
+            if (eventTypeHeader == null || eventTypeHeader.isBlank()) {
+                throw new AmqpRejectAndDontRequeueException("Permanent failure: missing event type");
+            }
+            Notification notification = toNotification(eventTypeHeader, data);
 
             boolean isNewEvent = processedEventStore.tryMarkProcessed(CONSUMER_NAME, eventId);
             if (!isNewEvent) {
@@ -63,10 +67,6 @@ public class PaymentNotificationConsumer {
                 return;
             }
 
-            String eventType = (eventTypeHeader == null || eventTypeHeader.isBlank())
-                    ? "PaymentCreated"
-                    : eventTypeHeader;
-            Notification notification = toNotification(eventType, data);
             notificationRepository.save(notification);
 
             log.info("Created {} notification {} for payment {} and user {}",
@@ -81,19 +81,17 @@ public class PaymentNotificationConsumer {
         }
     }
 
-    /**
-     * Kept for callers and tests that redeliver a PaymentCreated payload without an event-type header.
-     */
-    @Transactional
-    public void onPaymentCreated(String payloadJson, String eventIdHeader, String correlationId) {
-        onPaymentEvent(payloadJson, eventIdHeader, "PaymentCreated", correlationId);
-    }
-
     private Map<String, Object> readPayload(String payloadJson) {
         try {
-            return objectMapper.readValue(payloadJson, new TypeReference<>() {});
+            Map<String, Object> data = objectMapper.readValue(payloadJson, new TypeReference<>() {});
+            if (data == null) {
+                throw new AmqpRejectAndDontRequeueException("Permanent failure: payload is not a JSON object");
+            }
+            return data;
+        } catch (AmqpRejectAndDontRequeueException ex) {
+            throw ex;
         } catch (Exception ex) {
-            throw new AmqpRejectAndDontRequeueException("Permanent failure: payload is not JSON", ex);
+            throw new AmqpRejectAndDontRequeueException("Permanent failure: payload is not a JSON object", ex);
         }
     }
 
@@ -159,13 +157,6 @@ public class PaymentNotificationConsumer {
             UUID fromBody = parseUuidOrNull(eventIdObj.toString());
             if (fromBody != null) {
                 return fromBody;
-            }
-        }
-        Object paymentId = data.get("paymentId");
-        if (paymentId != null) {
-            UUID fromPayment = parseUuidOrNull(paymentId.toString());
-            if (fromPayment != null) {
-                return fromPayment;
             }
         }
         throw new AmqpRejectAndDontRequeueException("Permanent failure: event id is missing or invalid");

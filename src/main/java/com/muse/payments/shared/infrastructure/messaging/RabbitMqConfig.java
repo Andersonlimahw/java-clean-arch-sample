@@ -1,6 +1,8 @@
 package com.muse.payments.shared.infrastructure.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -26,16 +28,24 @@ import java.util.Map;
 @Configuration
 public class RabbitMqConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(RabbitMqConfig.class);
+
     public static final String EXCHANGE_PAYMENTS = "payments.events";
     public static final String EXCHANGE_PAYMENTS_DLX = "payments.events.dlx";
 
-    public static final String QUEUE_PAYMENT_CREATED_NOTIFICATIONS = "payments.created.notifications";
-    public static final String QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ = "payments.created.notifications.dlq";
+    /** Broker queue name kept from the original created-only binding. All payment events use it. */
+    public static final String QUEUE_PAYMENT_NOTIFICATIONS = "payments.created.notifications";
+    /** Broker DLQ name kept from the original created-only binding. */
+    public static final String QUEUE_PAYMENT_NOTIFICATIONS_DLQ = "payments.created.notifications.dlq";
 
     public static final String ROUTING_KEY_PAYMENT_CREATED = "payment.created";
     public static final String ROUTING_KEY_PAYMENT_COMPLETED = "payment.completed";
     public static final String ROUTING_KEY_PAYMENT_CANCELLED = "payment.cancelled";
-    public static final String ROUTING_KEY_PAYMENT_CREATED_DLQ = "payment.created.dlq";
+    /**
+     * Dead-letter routing key kept from the original created-only topology.
+     * Created, completed, and cancelled notification failures all use this key.
+     */
+    public static final String ROUTING_KEY_NOTIFICATIONS_DLQ = "payment.created.dlq";
 
     @Bean
     public TopicExchange paymentsExchange() {
@@ -49,15 +59,15 @@ public class RabbitMqConfig {
 
     @Bean
     public Queue paymentCreatedNotificationsQueue() {
-        return QueueBuilder.durable(QUEUE_PAYMENT_CREATED_NOTIFICATIONS)
+        return QueueBuilder.durable(QUEUE_PAYMENT_NOTIFICATIONS)
                 .withArgument("x-dead-letter-exchange", EXCHANGE_PAYMENTS_DLX)
-                .withArgument("x-dead-letter-routing-key", ROUTING_KEY_PAYMENT_CREATED_DLQ)
+                .withArgument("x-dead-letter-routing-key", ROUTING_KEY_NOTIFICATIONS_DLQ)
                 .build();
     }
 
     @Bean
     public Queue paymentCreatedNotificationsDlq() {
-        return QueueBuilder.durable(QUEUE_PAYMENT_CREATED_NOTIFICATIONS_DLQ).build();
+        return QueueBuilder.durable(QUEUE_PAYMENT_NOTIFICATIONS_DLQ).build();
     }
 
     @Bean
@@ -85,7 +95,7 @@ public class RabbitMqConfig {
     public Binding paymentCreatedDlqBinding(Queue paymentCreatedNotificationsDlq, DirectExchange paymentsDlxExchange) {
         return BindingBuilder.bind(paymentCreatedNotificationsDlq)
                 .to(paymentsDlxExchange)
-                .with(ROUTING_KEY_PAYMENT_CREATED_DLQ);
+                .with(ROUTING_KEY_NOTIFICATIONS_DLQ);
     }
 
     @Bean
@@ -139,6 +149,12 @@ public class RabbitMqConfig {
         template.setMessageConverter(messageConverter);
         template.setMandatory(true);
         template.setObservationEnabled(true);
+        template.setReturnsCallback(returned -> log.debug(
+                "Broker returned {} {}: {}",
+                returned.getExchange(),
+                returned.getRoutingKey(),
+                returned.getReplyText()
+        ));
         return template;
     }
 }

@@ -20,4 +20,16 @@ class PublishRetryBackoffTest {
     void negativeJitterIsIgnored() {
         assertThat(PublishRetryBackoff.delay(1, -5)).isEqualTo(Duration.ofSeconds(4));
     }
+
+    @Test
+    void attemptsBelowOneUseTheFirstStep() {
+        assertThat(PublishRetryBackoff.delay(0, 0)).isEqualTo(Duration.ofSeconds(4));
+        assertThat(PublishRetryBackoff.delay(-4, 1)).isEqualTo(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void jitterCannotPushTheDelayPastTheCap() {
+        assertThat(PublishRetryBackoff.delay(8, 10_000)).isEqualTo(Duration.ofSeconds(PublishRetryBackoff.MAX_SECONDS));
+        assertThat(PublishRetryBackoff.delay(7, 1_000)).isEqualTo(Duration.ofSeconds(PublishRetryBackoff.MAX_SECONDS));
+    }
 }
