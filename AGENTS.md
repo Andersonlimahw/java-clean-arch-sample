@@ -1,6 +1,6 @@
 # AGENTS.md — Payments Platform Engineering Guidance
 
-This repository is a production-grade Payments Platform built with Java 21, Spring Boot 3.5.16, Spring Modulith, PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Docker/Kubernetes.
+This repository is a production-grade Payments Platform built with Java 25, Spring Boot 3.5.16, Spring Modulith, PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Docker/Kubernetes.
 
 ## Architecture Guidelines
 - **Modular Monolith**: base package `com.muse.payments`. Modules: `shared`, `identity`, `payments`, `notifications`.

@@ -19,7 +19,7 @@ Base in `deploy/k8s/base`, overlays in `deploy/k8s/overlays/staging` and `produc
 
 ## Image
 
-The manifests reference `payments-platform:latest` and do not pull from a registry unless that tag is already present (`IfNotPresent`). Compose does not publish this name. Build it and load it into the cluster (or push it and set the image in the overlay) before applying:
+The manifests reference `payments-platform:latest` and do not pull from a registry unless that tag is already present (`IfNotPresent`). That image is the repository `Dockerfile`: Eclipse Temurin JRE 25, same non-root user and JVM flags as local Compose. Compose does not publish this name. Build it and load it into the cluster (or push it and set the image in the overlay) before applying:
 
 ```bash
 docker build -t payments-platform:latest .

@@ -4,7 +4,7 @@
 
 ## Summary
 
-Package and run the Payments platform (`payments-platform`, Spring Boot 3.5 / Java 21)
+Package and run the Payments platform (`payments-platform`, Spring Boot 3.5 / Java 25)
 consistently on a laptop (Docker Compose), in Kubernetes (kustomize base + overlays) and on
 managed hosts (Railway primary, Render and Cloud Run alternatives), with a CI gate that can
 run identically on GitHub Actions and locally. Infra files only — no `src/`, `pom.xml` or
@@ -26,8 +26,8 @@ application config changes.
 
 ## Functional requirements
 
-- **FR-001** Multi-stage `Dockerfile`: Maven + JDK 21 build stage with BuildKit cache for
-  `~/.m2`; JRE 21 runtime; Spring Boot layered extraction; artifact-agnostic (`target/*.jar`);
+- **FR-001** Multi-stage `Dockerfile`: Maven + JDK 25 build stage with BuildKit cache for
+  `~/.m2`; JRE 25 runtime; Spring Boot layered extraction; artifact-agnostic (`target/*.jar`);
   non-root numeric UID; container-aware JVM flags via `JAVA_OPTS`; honours `PORT`.
 - **FR-002** `docker-compose.yml` with healthchecks for every service, named volumes,
   `depends_on: condition: service_healthy`, ports bound to `127.0.0.1`, values from `.env`.

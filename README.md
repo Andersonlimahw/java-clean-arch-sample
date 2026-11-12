@@ -1,6 +1,6 @@
 # Payments Platform 💳
 
-A production-grade **Payments Modular Monolith** built with **Java 21**, **Spring Boot 3.5.16**, **Spring Modulith**, **PostgreSQL 16**, **Redis 7**, and **RabbitMQ 3.13**.
+A production-grade **Payments Modular Monolith** built with **Java 25**, **Spring Boot 3.5.16**, **Spring Modulith**, **PostgreSQL 16**, **Redis 7**, and **RabbitMQ 3.13**.
 
 Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **CQRS**, and the **Transactional Outbox Pattern** to provide reliable, highly concurrent payment execution and event-driven notifications.
 
@@ -39,7 +39,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER` and `ROLE_
 ## Quickstart
 
 ### Prerequisites
-- JDK 21+
+- JDK 25+
 - Maven 3.9+
 - Docker Engine (for Testcontainers and local compose)
 

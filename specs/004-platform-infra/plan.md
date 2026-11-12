@@ -10,8 +10,8 @@ unpaid → local gate is the evidence).
 
 | Topic | Decision | Why |
 |---|---|---|
-| Build image | `maven:3.9-eclipse-temurin-21` + `--mount=type=cache,target=/root/.m2` | No wrapper needed in repo; cache survives rebuilds |
-| Runtime image | `eclipse-temurin:21-jre` (Ubuntu) | Official, patched, has `sh`/`bash` for healthchecks and preStop |
+| Build image | `maven:3.9-eclipse-temurin-25` + `--mount=type=cache,target=/root/.m2` | No wrapper needed in repo; cache survives rebuilds |
+| Runtime image | `eclipse-temurin:25-jre` (Ubuntu) | Official, patched, has `sh`/`bash` for healthchecks and preStop |
 | Layering | `java -Djarmode=tools -jar app.jar extract --layers --launcher` | Boot ≥ 3.3 tools mode; dependency layers cached across releases |
 | JVM | `-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=50 -XX:+ExitOnOutOfMemoryError` | Sizes heap from cgroup limit; OOM → restart, not zombie |
 | Port | `SERVER_PORT` > `PORT` > 8080 in entrypoint | Railway/Render/Cloud Run inject `PORT` |

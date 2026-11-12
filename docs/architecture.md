@@ -1,6 +1,6 @@
 # Architecture — Payments Platform
 
-One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 21.
+One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 25.
 Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel. Open means a Spring Modulith module of type `OPEN`: the other modules may depend on it. It holds ports and cross-cutting types, not payment rules.
 The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md).
 
@@ -8,7 +8,7 @@ The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payment
 
 ```mermaid
 flowchart LR
-    Client["Client<br/>HTTP JSON"] -->|":8080 /api/v1"| API["payments-platform<br/>Spring Boot 3.5.16 · Java 21"]
+    Client["Client<br/>HTTP JSON"] -->|":8080 /api/v1"| API["payments-platform<br/>Spring Boot 3.5.16 · Java 25"]
     API --> PG[("PostgreSQL 16<br/>source of truth")]
     API --> Redis[("Redis 7<br/>cache-aside")]
     API --> MQ["RabbitMQ 3.13<br/>payments.events"]
