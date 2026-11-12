@@ -1,9 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM eclipse-temurin:25-jdk-alpine AS builder
+ARG JAVA_MAJOR=25
+FROM maven:3.9-eclipse-temurin-${JAVA_MAJOR}-alpine AS builder
 WORKDIR /workspace
-
-# Install maven
-RUN apk add --no-cache maven
 
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2 mvn -B dependency:go-offline || true
@@ -12,9 +10,9 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests
 
 RUN JAR_FILE=$(ls target/*.jar | grep -v '\.original$' | head -n 1) && \
-    java -Djarmode=layertools -jar "$JAR_FILE" extract --destination target/extracted
+    java -Djarmode=tools -jar "$JAR_FILE" extract --layers --launcher --destination target/extracted
 
-FROM eclipse-temurin:25-jre-alpine AS runtime
+FROM eclipse-temurin:${JAVA_MAJOR}-jre-alpine AS runtime
 RUN addgroup -S -g 10001 appgroup && adduser -S -u 10001 -G appgroup appuser
 WORKDIR /app
 
