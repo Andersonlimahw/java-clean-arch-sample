@@ -101,6 +101,13 @@ app:
     listener-multiplier: ${LISTENER_MULTIPLIER:2.0}
     listener-max-interval-ms: ${LISTENER_MAX_INTERVAL_MS:10000}
     confirm-timeout: ${PUBLISH_CONFIRM_TIMEOUT:5s}
+  fraud-screening:
+    base-url: ${FRAUD_SCREENING_BASE_URL:http://localhost:8090}
+    connect-timeout: 300ms
+    # Must stay above the time limiter timeout. The limiter is what cuts a slow call.
+    read-timeout: 2s
+    resilience-instance: fraudScreening
+    http-pool-size: 4
 
 springdoc:
   api-docs:
@@ -108,3 +115,46 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     operationsSorter: method
+
+# Instance name fraudScreening is the Micrometer tag. Profiles override the numbers, not the exception lists.
+# Retry only these transient failures. 4xx is FraudBusinessException and is ignored.
+# CallNotPermittedException is ignored so an open circuit is not retried.
+resilience4j:
+  circuitbreaker:
+    instances:
+      fraudScreening:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 8
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 100
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: false
+        record-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - com.muse.payments.payments.infrastructure.fraud.FraudTransientException
+        ignore-exceptions:
+          - com.muse.payments.payments.infrastructure.fraud.FraudBusinessException
+  retry:
+    instances:
+      fraudScreening:
+        max-attempts: 3
+        wait-duration: 100ms
+        fail-after-max-attempts: false
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - com.muse.payments.payments.infrastructure.fraud.FraudTransientException
+        ignore-exceptions:
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+          - com.muse.payments.payments.infrastructure.fraud.FraudBusinessException
+  timelimiter:
+    instances:
+      fraudScreening:
+        timeout-duration: 800ms
+        cancel-running-future: true

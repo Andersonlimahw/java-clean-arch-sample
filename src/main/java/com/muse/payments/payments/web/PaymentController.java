@@ -183,7 +183,7 @@ public class PaymentController {
     }
 
     @PostMapping("/{id}/confirm")
-    @Operation(summary = "Confirm payment state transition from PENDING to COMPLETED")
+    @Operation(summary = "Confirm a PENDING payment. A payment held UNDER_REVIEW was not approved and cannot be confirmed.")
     public ResponseEntity<PaymentResponse> confirmPayment(
             @PathVariable UUID id,
             CurrentUser currentUser
@@ -193,7 +193,7 @@ public class PaymentController {
     }
 
     @PostMapping("/{id}/cancel")
-    @Operation(summary = "Cancel payment state transition from PENDING to CANCELLED")
+    @Operation(summary = "Cancel a PENDING or UNDER_REVIEW payment")
     public ResponseEntity<PaymentResponse> cancelPayment(
             @PathVariable UUID id,
             @RequestParam(defaultValue = "Customer requested cancellation") String reason,

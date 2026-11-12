@@ -39,9 +39,21 @@ public class Payment extends AggregateRoot<UUID> {
     }
 
     public static Payment create(UUID userId, Money money, String description) {
+        return open(userId, money, description, PaymentStatus.PENDING);
+    }
+
+    /**
+     * Holds a payment that fraud screening could not clear. Confirmation is rejected
+     * until a later review moves it back to a confirmable state. This is not an approval.
+     */
+    public static Payment createUnderReview(UUID userId, Money money, String description) {
+        return open(userId, money, description, PaymentStatus.UNDER_REVIEW);
+    }
+
+    private static Payment open(UUID userId, Money money, String description, PaymentStatus status) {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now();
-        Payment payment = new Payment(id, userId, money, description, PaymentStatus.PENDING, now, now, null);
+        Payment payment = new Payment(id, userId, money, description, status, now, now, null);
         payment.registerEvent(new PaymentCreatedEvent(id, userId, money.amount(), money.currency(), description));
         return payment;
     }
@@ -69,7 +81,7 @@ public class Payment extends AggregateRoot<UUID> {
     }
 
     public void cancel(String reason) {
-        if (this.status != PaymentStatus.PENDING) {
+        if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.UNDER_REVIEW) {
             throw new ConflictException("Cannot cancel payment in status: " + this.status);
         }
         this.status = PaymentStatus.CANCELLED;

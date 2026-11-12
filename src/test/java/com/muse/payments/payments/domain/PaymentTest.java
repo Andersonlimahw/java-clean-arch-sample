@@ -89,6 +89,21 @@ class PaymentTest {
     }
 
     @Test
+    @DisplayName("A payment held for fraud review cannot be confirmed and can be cancelled")
+    void underReview_cannotBeCompletedAndCanBeCancelled() {
+        Payment held = Payment.createUnderReview(
+                UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held");
+
+        assertThat(held.getStatus()).isEqualTo(PaymentStatus.UNDER_REVIEW);
+        assertThatThrownBy(held::complete)
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Cannot complete payment in status: UNDER_REVIEW");
+
+        held.cancel("Review abandoned");
+        assertThat(held.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+    }
+
+    @Test
     @DisplayName("Payment.isOwnedBy validates owner matching")
     void isOwnedBy_shouldValidateCorrectOwnership() {
         UUID ownerId = UUID.randomUUID();

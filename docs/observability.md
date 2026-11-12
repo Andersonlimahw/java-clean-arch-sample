@@ -28,6 +28,10 @@ Tests set `management.tracing.enabled=false` so the suite does not need a collec
 | `payments.cache.hits` / `payments.cache.misses` / `payments.cache.errors` | counters | Cache-aside outcomes. |
 | `payments.cache.latency` | timer | Cache read latency. |
 | `http.server.requests` | timer | API latency and status. SLO buckets at 100ms, 300ms, 500ms, and 1s. |
+| `resilience4j.circuitbreaker.calls{name="fraudScreening"}` | timer | Fraud-screening circuit breaker calls (`kind` is `successful`, `failed`, or `ignored`). | 
+| `resilience4j.circuitbreaker.not.permitted.calls{name="fraudScreening"}` | counter | Calls rejected because the fraud-screening circuit was open. |
+| `resilience4j.retry.calls{name="fraudScreening"}` | counter | Fraud-screening retries. `failed_with_retry` is an exhausted transient call. `failed_without_retry` is a 4xx or an open circuit, which is not retried. |
+| `resilience4j.timelimiter.calls{name="fraudScreening"}` | counter | Fraud-screening timeouts (`kind="timeout"`). |
 
 Prometheus names replace `.` with `_` (`payments_outbox_pending`).
 

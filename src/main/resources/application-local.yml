@@ -1,0 +1,25 @@
+# Opt-in profile for a developer machine talking to a slow local fraud stub.
+# Activate with spring.profiles.active=local. The base file remains the default.
+app:
+  fraud-screening:
+    connect-timeout: 500ms
+    read-timeout: 4s
+    http-pool-size: 4
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      fraudScreening:
+        sliding-window-size: 12
+        minimum-number-of-calls: 12
+        failure-rate-threshold: 60
+        wait-duration-in-open-state: 10s
+  retry:
+    instances:
+      fraudScreening:
+        max-attempts: 4
+        wait-duration: 250ms
+  timelimiter:
+    instances:
+      fraudScreening:
+        timeout-duration: 2s

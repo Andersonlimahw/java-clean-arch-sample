@@ -42,4 +42,24 @@ class ArchitectureTest {
                     "..infrastructure..OutboxEventEntity.."
             )
             .as("Application layer must not depend on web controllers or infrastructure entities");
+
+    @ArchTest
+    static final ArchRule domain_should_not_depend_on_resilience4j_or_http_clients = noClasses()
+            .that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "io.github.resilience4j..",
+                    "org.springframework.web.client..",
+                    "java.net.http.."
+            )
+            .as("Domain must not import Resilience4j or an HTTP client");
+
+    @ArchTest
+    static final ArchRule application_should_not_depend_on_resilience4j_or_http_clients = noClasses()
+            .that().resideInAPackage("..application..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "io.github.resilience4j..",
+                    "org.springframework.web.client..",
+                    "java.net.http.."
+            )
+            .as("Application must not import Resilience4j or an HTTP client; resilience stays in infrastructure");
 }
