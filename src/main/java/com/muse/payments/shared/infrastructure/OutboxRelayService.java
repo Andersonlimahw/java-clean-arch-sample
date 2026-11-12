@@ -3,6 +3,9 @@ package com.muse.payments.shared.infrastructure;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muse.payments.shared.infrastructure.messaging.RabbitMqConfig;
+import com.muse.payments.shared.infrastructure.observability.W3cTraceContextPropagation;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -10,6 +13,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -26,15 +30,28 @@ public class OutboxRelayService {
     private final OutboxJpaRepository outboxRepository;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final W3cTraceContextPropagation traceContext;
+    private final Timer publishLag;
 
     public OutboxRelayService(
             OutboxJpaRepository outboxRepository,
             RabbitTemplate rabbitTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            W3cTraceContextPropagation traceContext,
+            MeterRegistry meterRegistry
     ) {
         this.outboxRepository = Objects.requireNonNull(outboxRepository);
         this.rabbitTemplate = Objects.requireNonNull(rabbitTemplate);
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.traceContext = Objects.requireNonNull(traceContext);
+        this.publishLag = Timer.builder("payments.outbox.publish.lag")
+                .description("Time from occurred_at until the outbox row is published")
+                .serviceLevelObjectives(
+                        Duration.ofSeconds(1),
+                        Duration.ofSeconds(10),
+                        Duration.ofSeconds(30),
+                        Duration.ofSeconds(60))
+                .register(meterRegistry);
     }
 
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}")
@@ -48,10 +65,11 @@ public class OutboxRelayService {
         int publishedCount = 0;
         for (OutboxEventEntity event : pendingEvents) {
             String routingKey = resolveRoutingKey(event.getEventType());
-            String correlationId = extractCorrelationId(event.getHeaders());
+            Map<String, Object> headers = readHeaders(event.getHeaders());
+            String correlationId = correlationId(headers);
 
             try {
-                rabbitTemplate.convertAndSend(
+                traceContext.runWithParent(headers, () -> rabbitTemplate.convertAndSend(
                         RabbitMqConfig.EXCHANGE_PAYMENTS,
                         routingKey,
                         event.getPayload(),
@@ -65,9 +83,11 @@ public class OutboxRelayService {
                             props.setHeader("X-Aggregate-Id", event.getAggregateId().toString());
                             return message;
                         }
-                );
+                ));
 
-                event.setPublishedAt(Instant.now());
+                Instant publishedAt = Instant.now();
+                event.setPublishedAt(publishedAt);
+                recordPublishLag(event.getOccurredAt(), publishedAt);
                 publishedCount++;
                 log.debug("Published outbox event {} of type {} with routing key {}", event.getId(), event.getEventType(), routingKey);
             } catch (Exception ex) {
@@ -99,18 +119,30 @@ public class OutboxRelayService {
         };
     }
 
-    private String extractCorrelationId(String headersJson) {
+    private void recordPublishLag(Instant occurredAt, Instant publishedAt) {
+        if (occurredAt == null || publishedAt == null) {
+            return;
+        }
+        Duration lag = Duration.between(occurredAt, publishedAt);
+        publishLag.record(lag.isNegative() ? Duration.ZERO : lag);
+    }
+
+    private Map<String, Object> readHeaders(String headersJson) {
         if (headersJson == null || headersJson.isBlank()) {
-            return UUID.randomUUID().toString();
+            return Map.of();
         }
         try {
-            Map<String, Object> headers = objectMapper.readValue(headersJson, new TypeReference<>() {});
-            Object correlationId = headers.get("correlationId");
-            if (correlationId != null && !correlationId.toString().isBlank()) {
-                return correlationId.toString();
-            }
+            return objectMapper.readValue(headersJson, new TypeReference<>() {});
         } catch (Exception e) {
             log.warn("Failed to parse outbox headers JSON: {}", headersJson);
+            return Map.of();
+        }
+    }
+
+    private String correlationId(Map<String, Object> headers) {
+        Object correlationId = headers.get("correlationId");
+        if (correlationId != null && !correlationId.toString().isBlank()) {
+            return correlationId.toString();
         }
         return UUID.randomUUID().toString();
     }

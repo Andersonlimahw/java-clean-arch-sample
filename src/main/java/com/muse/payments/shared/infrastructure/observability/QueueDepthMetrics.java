@@ -37,6 +37,7 @@ public class QueueDepthMetrics {
         try {
             Properties properties = amqpAdmin.getQueueProperties(queue);
             if (properties == null) {
+                log.warn("Queue depth unavailable for {}: queue is missing or the broker returned no properties", queue);
                 return Double.NaN;
             }
             Object count = properties.get(RabbitAdmin.QUEUE_MESSAGE_COUNT);
