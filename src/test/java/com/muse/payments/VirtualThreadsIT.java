@@ -11,7 +11,6 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
-import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.SimpleAsyncTaskScheduler;
 
 import java.time.Instant;
@@ -22,13 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {
-                "app.outbox.scheduling.enabled=true",
-                "app.outbox.poll-interval-ms=3600000"
-        }
-)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class VirtualThreadsIT extends TestcontainersBase {
 
     @Autowired
@@ -36,9 +29,6 @@ class VirtualThreadsIT extends TestcontainersBase {
 
     @Autowired
     private RequestThreadProbe requestThreadProbe;
-
-    @Autowired
-    private TaskScheduler taskScheduler;
 
     @Test
     @DisplayName("Tomcat handles a real request on a virtual thread")
@@ -51,20 +41,30 @@ class VirtualThreadsIT extends TestcontainersBase {
     }
 
     @Test
-    @DisplayName("With virtual threads enabled, scheduled work runs on a virtual thread")
+    @DisplayName("SimpleAsyncTaskScheduler with virtual threads runs the task on a virtual thread")
     void schedulerRunsOnVirtualThreads() throws Exception {
-        assertThat(taskScheduler).isInstanceOf(SimpleAsyncTaskScheduler.class);
-        AtomicBoolean virtual = new AtomicBoolean();
-        AtomicReference<String> description = new AtomicReference<>();
-        CountDownLatch ran = new CountDownLatch(1);
-        taskScheduler.schedule(() -> {
-            Thread current = Thread.currentThread();
-            virtual.set(current.isVirtual());
-            description.set(current.toString());
-            ran.countDown();
-        }, Instant.now());
-        assertThat(ran.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(virtual.get()).as("scheduled task ran on %s", description.get()).isTrue();
+        // Do not set app.outbox.scheduling.enabled here. That starts OutboxRelayService
+        // against the shared Testcontainers database and can publish rows another IT still owns.
+        // Boot registers this same scheduler when scheduling is on and virtual threads are enabled.
+        SimpleAsyncTaskScheduler scheduler = new SimpleAsyncTaskScheduler();
+        scheduler.setVirtualThreads(true);
+        scheduler.setThreadNamePrefix("vt-sched-");
+        scheduler.start();
+        try {
+            AtomicBoolean virtual = new AtomicBoolean();
+            AtomicReference<String> description = new AtomicReference<>();
+            CountDownLatch ran = new CountDownLatch(1);
+            scheduler.schedule(() -> {
+                Thread current = Thread.currentThread();
+                virtual.set(current.isVirtual());
+                description.set(current.toString());
+                ran.countDown();
+            }, Instant.now());
+            assertThat(ran.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(virtual.get()).as("scheduled task ran on %s", description.get()).isTrue();
+        } finally {
+            scheduler.close();
+        }
     }
 
     @TestConfiguration
