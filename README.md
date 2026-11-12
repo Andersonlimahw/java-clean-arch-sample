@@ -6,14 +6,17 @@ Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **C
 
 ## Architecture
 
+Diagrams, the HTTP contract, and the consistency model: [docs/architecture.md](docs/architecture.md).
+Trade-offs: [docs/adr](docs/adr/README.md).
+
 - **Modular Monolith**: base package `com.muse.payments` with verifiable architectural boundaries.
-  - `identity`: User registration, authentication, token rotation, and RBAC.
+  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Endpoints require a valid bearer token and do not authorize by role.
   - `payments`: Payment aggregate root, state machine (PENDING → COMPLETED / CANCELLED), idempotency key deduplication, and optimistic locking.
   - `notifications`: Event-driven notification dispatch via RabbitMQ with idempotent consumer (`processed_events`).
-  - `shared`: Common domain building blocks, transactional outbox/inbox ports, security filters, and RFC 7807 problem details.
+  - `shared`: Common domain building blocks, the outbox port, the processed-event store, security filters, and RFC 7807 problem details.
 - **Persistence**: PostgreSQL 16 managed via Flyway append-only migrations.
 - **Cache**: Redis 7 cache-aside for payment lookups with safe fallbacks.
-- **Messaging**: RabbitMQ with topic exchanges, DLQ, exponential retry with jitter, and Transactional Outbox.
+- **Messaging**: RabbitMQ topic exchange `payments.events`. Created, completed, and cancelled events share `payments.created.notifications`, with listener retry, a dead-letter queue, and publisher confirms on the outbox relay. See [docs/architecture.md](docs/architecture.md).
 - **Security**: Stateless Spring Security Resource Server with RS256 JWT tokens.
 
 ## Authorization
@@ -47,20 +50,27 @@ mvn clean verify
 
 ### Running locally
 Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`).
-To run full local platform services with Docker Compose (app, postgres, redis, rabbitmq), see the infrastructure stack delivered in [PR #2 (Platform Infra)](https://github.com/Andersonlimahw/java-clean-arch-sample/pull/2):
+Start PostgreSQL, Redis, and RabbitMQ, then the application, from the repository root as described in [docs/deploy.md](docs/deploy.md). That runbook sources `.env.example` so `DB_PASSWORD` and `REDIS_PASSWORD` match Compose. `mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
+
 ```bash
-docker compose up -d postgres redis rabbitmq
-mvn spring-boot:run
+./scripts/validate-api.sh
 ```
 
-API documentation available at `http://localhost:8080/swagger-ui.html`.
+The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The same statuses are in `src/test/postman/payments-v1.postman_collection.json`.
 
 ### Kubernetes migration Job
 
-The Job in `deploy/k8s/base/flyway-job.yaml` sets `APP_MIGRATION_ONLY=true`. The process applies Flyway, does not serve HTTP, and does not start Rabbit consumers or the outbox scheduler. It exits `0` only after migrations are applied, and exits non-zero if startup or Flyway fails. Replicas inherit `SPRING_FLYWAY_ENABLED=false` from the ConfigMap and leave `APP_MIGRATION_ONLY` unset, so they do not migrate and they keep serving traffic.
+The Job in `deploy/k8s/base/flyway-job.yaml` is named `payments-flyway-migration` and sets `APP_MIGRATION_ONLY=true`. The process applies Flyway, does not serve HTTP, and does not start Rabbit consumers or the outbox scheduler. It exits `0` only after migrations are applied and nothing is pending, and exits non-zero if startup or Flyway fails. Replicas inherit `SPRING_FLYWAY_ENABLED=false` from the ConfigMap and leave `APP_MIGRATION_ONLY` unset, so they do not migrate and they keep serving traffic.
 
 Local migration against Compose dependencies, without starting the HTTP server:
 
 ```bash
 APP_MIGRATION_ONLY=true mvn spring-boot:run
 ```
+
+## Deploy
+
+Runbooks for Railway (preferred), Render, and Cloud Run, plus rollback and troubleshooting: [docs/deploy.md](docs/deploy.md).
+Kubernetes layout and apply order: [deploy/k8s/README.md](deploy/k8s/README.md) and `scripts/k8s-apply.sh`.
+HTTP smoke test: `scripts/validate-api.sh`.
+Do not run this JVM on Vercel Functions. That decision is [ADR 0011](docs/adr/0011-railway-vs-other-hosting.md). No production project is created from this repository.
