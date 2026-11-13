@@ -2,6 +2,8 @@
 
 Base path: `/api/v1`. The application uses stateless RS256 bearer tokens. Roles are read from the JWT `roles` claim and mapped to `ROLE_USER`, `ROLE_ADMIN`, and `ROLE_FRAUD_REVIEWER`.
 
+For protected endpoints, use Swagger UI's **Authorize** control or send `Authorization: Bearer <access-token>`. The server derives the caller's `CurrentUser` from that token; `CurrentUser`, `userId`, and `roles` are not request fields or query parameters. For example, payment creation sends only `amount`, `currency`, and optional `description` in its JSON body.
+
 ## Endpoints
 
 | Method | Route | Required role | Contract |

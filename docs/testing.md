@@ -64,6 +64,8 @@ mvn clean verify
 
 Start the local application and wait for `GET /actuator/health/readiness` to return `200`. The collection registers a unique user for each run and asserts the ordered `/api/v1` smoke responses.
 
+`SecurityWebTest` also checks that an authenticated payment-list request succeeds with only the bearer header and that `/v3/api-docs` does not expose `CurrentUser` as an input parameter or body.
+
 Install the Newman CLI separately, then run the collection:
 
 ```bash

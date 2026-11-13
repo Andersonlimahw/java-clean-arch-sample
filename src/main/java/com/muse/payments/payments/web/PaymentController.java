@@ -93,7 +93,7 @@ public class PaymentController {
     public ResponseEntity<?> createPayment(
             @RequestHeader(value = HEADER_IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @Valid @RequestBody CreatePaymentRequest request,
-            CurrentUser currentUser,
+            @Parameter(hidden = true) CurrentUser currentUser,
             HttpServletRequest httpRequest
     ) throws JsonProcessingException {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
@@ -155,7 +155,7 @@ public class PaymentController {
     )
     public ResponseEntity<PaymentResponse> getPaymentById(
             @PathVariable UUID id,
-            CurrentUser currentUser
+            @Parameter(hidden = true) CurrentUser currentUser
     ) {
         PaymentResponse response = getPaymentByIdHandler.handle(
                 new GetPaymentByIdQuery(id, currentUser.userId(), currentUser.isAdmin() || currentUser.hasRole("FRAUD_REVIEWER"))
@@ -212,7 +212,7 @@ public class PaymentController {
                     schema = @Schema(allowableValues = {"createdAt,desc", "createdAt,asc"}, defaultValue = "createdAt,desc")
             )
             @RequestParam(required = false) String sort,
-            CurrentUser currentUser
+            @Parameter(hidden = true) CurrentUser currentUser
     ) {
         PageResponse<PaymentResponse> response = listPaymentsHandler.handle(
                 new ListPaymentsQuery(currentUser.userId(), page, size, sort)
@@ -235,7 +235,7 @@ public class PaymentController {
     public ResponseEntity<PaymentResponse> reviewPayment(
             @PathVariable UUID id,
             @RequestParam ReviewDecision decision,
-            CurrentUser currentUser
+            @Parameter(hidden = true) CurrentUser currentUser
     ) {
         PaymentResponse response = reviewPaymentHandler.handle(new ReviewPaymentCommand(id, currentUser.userId(), decision));
         return ResponseEntity.ok(response);
@@ -245,7 +245,7 @@ public class PaymentController {
     @Operation(summary = "Confirm a PENDING payment. A payment held UNDER_REVIEW was not approved and cannot be confirmed.")
     public ResponseEntity<PaymentResponse> confirmPayment(
             @PathVariable UUID id,
-            CurrentUser currentUser
+            @Parameter(hidden = true) CurrentUser currentUser
     ) {
         PaymentResponse response = confirmPaymentHandler.handle(new ConfirmPaymentCommand(id, currentUser.userId()));
         return ResponseEntity.ok(response);
@@ -256,7 +256,7 @@ public class PaymentController {
     public ResponseEntity<PaymentResponse> cancelPayment(
             @PathVariable UUID id,
             @RequestParam(defaultValue = "Customer requested cancellation") String reason,
-            CurrentUser currentUser
+            @Parameter(hidden = true) CurrentUser currentUser
     ) {
         PaymentResponse response = cancelPaymentHandler.handle(new CancelPaymentCommand(id, currentUser.userId(), reason));
         return ResponseEntity.ok(response);

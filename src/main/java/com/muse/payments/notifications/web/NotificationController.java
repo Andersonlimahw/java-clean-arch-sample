@@ -4,6 +4,7 @@ import com.muse.payments.notifications.domain.Notification;
 import com.muse.payments.notifications.domain.NotificationRepository;
 import com.muse.payments.shared.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +29,7 @@ public class NotificationController {
 
     @GetMapping
     @Operation(summary = "List current user notifications")
-    public ResponseEntity<List<Notification>> listUserNotifications(CurrentUser currentUser) {
+    public ResponseEntity<List<Notification>> listUserNotifications(@Parameter(hidden = true) CurrentUser currentUser) {
         List<Notification> notifications = notificationRepository.findByUserId(currentUser.userId());
         return ResponseEntity.ok(notifications);
     }

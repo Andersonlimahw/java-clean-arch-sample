@@ -9,6 +9,7 @@ This repository is a production-grade Payments Platform built with Java 25, Spri
 - **Transactional Outbox**: Events persisted to `outbox_events` in the aggregate's transaction (`Propagation.MANDATORY`).
 - **No Cross-Module DB FKs**: Only intra-module foreign keys are allowed.
 - **Security**: RS256 JWT tokens, RFC 7807 `application/problem+json` errors.
+- **API auth context**: `CurrentUser` is resolved from the bearer token and must stay hidden from request schemas; see [docs/rules/api-auth-context.md](docs/rules/api-auth-context.md).
 
 ## Worktree & Execution Rules
 - Worktrees are located under `.worktrees/<feature-name>`.
