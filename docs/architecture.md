@@ -4,44 +4,110 @@ One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 25.
 Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel. Open means a Spring Modulith module of type `OPEN`: the other modules may depend on it. It holds ports and cross-cutting types, not payment rules.
 The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md).
 
-## System context (C4 L1)
+## System context (C4 level 1)
 
 ```mermaid
-flowchart LR
-    Client["Client<br/>HTTP JSON"] -->|":8080 /api/v1"| API["payments-platform<br/>Spring Boot 3.5.16 · Java 25"]
-    API --> PG[("PostgreSQL 16<br/>source of truth")]
-    API --> Redis[("Redis 7<br/>cache-aside")]
-    API --> MQ["RabbitMQ 3.13<br/>payments.events"]
+C4Context
+    title Payments Platform — System Context
+    Person(customer, "Customer", "Creates and tracks their own payments")
+    Person(admin, "Administrator", "Uses administrative payment routes")
+    Person(reviewer, "Fraud Reviewer", "Reviews payments held for screening")
+    System(platform, "Payments Platform", "HTTP API for identity, payments, and notifications")
+    System_Ext(fraud, "Fraud Screening Provider", "Returns CLEAR or DECLINED screening decisions")
+    Rel(customer, platform, "Registers, authenticates, and manages payments", "HTTP / JSON")
+    Rel(admin, platform, "Reads and manages payments", "HTTP / JSON")
+    Rel(reviewer, platform, "Reviews held payments", "HTTP / JSON")
+    Rel(platform, fraud, "Screens payment requests", "HTTPS / JSON")
 ```
 
-## Containers (C4 L2)
+## Containers (C4 level 2)
 
-The application is one deployable. Redis, PostgreSQL, and RabbitMQ are separate processes.
+The application is one Spring Boot deployable. PostgreSQL, Redis, and RabbitMQ run as separate services. The observability services shown are the optional local Compose overlay.
 
 ```mermaid
-flowchart LR
-    API["payments-platform.jar"] --> PG[("PostgreSQL")]
-    API --> Redis[("Redis")]
-    API --> MQ["RabbitMQ"]
+C4Container
+    title Payments Platform — Containers
+    Person(customer, "Customer", "Calls the HTTP API")
+    Person(reviewer, "Fraud Reviewer", "Reviews held payments")
+    System_Boundary(payments, "Payments Platform") {
+        Container(api, "Payments API", "Java 25, Spring Boot 3.5", "HTTP endpoints, application use cases, scheduled outbox relay, and RabbitMQ consumer")
+        ContainerDb(database, "Payments Database", "PostgreSQL 16", "System of record; Flyway-managed schema")
+        ContainerDb(cache, "Payment Cache", "Redis 7", "Cache-aside payment lookups")
+        ContainerQueue(broker, "Message Broker", "RabbitMQ 3.13", "Payment events and notification dead-letter queue")
+    }
+    System_Ext(fraud, "Fraud Screening Provider", "HTTP screening endpoint")
+    System_Boundary(observability, "Optional Local Observability Stack") {
+        Container(collector, "OTel Collector", "OpenTelemetry Collector", "Receives OTLP traces and forwards them to Jaeger")
+        Container(jaeger, "Jaeger", "Jaeger 1.62", "Trace search and UI")
+        Container(prometheus, "Prometheus", "Prometheus 2.55", "Scrapes the application metrics endpoint")
+        Container(grafana, "Grafana", "Grafana 11.3", "Provisioned Payments platform dashboard")
+    }
+    Rel(customer, api, "Uses", "HTTP / JSON")
+    Rel(reviewer, api, "Reviews held payments", "HTTP / JSON")
+    Rel(api, database, "Reads and writes", "JDBC")
+    Rel(api, cache, "Caches payment details", "Redis protocol")
+    Rel(api, broker, "Publishes and consumes events", "AMQP")
+    Rel(api, fraud, "Screens payments", "HTTP")
+    Rel(api, collector, "Exports traces", "OTLP HTTP")
+    Rel(prometheus, api, "Scrapes metrics", "HTTP")
+    Rel(collector, jaeger, "Forwards traces", "OTLP gRPC")
+    Rel(grafana, prometheus, "Queries metrics", "HTTP")
 ```
 
-## Components (C4 L3)
+## Components (C4 level 3)
 
 ```mermaid
-flowchart TB
-    API["payments-platform.jar"]
-    API --> ID["identity"]
-    API --> PAY["payments"]
-    API --> NTF["notifications"]
-    API --> SH["shared"]
-    PAY -->|"outbox row, same transaction"| PG[("PostgreSQL")]
-    ID --> PG
-    NTF --> PG
-    SH -->|relay| MQ["RabbitMQ"]
-    MQ -->|"notifications queue"| NTF
-    PAY -->|GET by id| Redis[("Redis")]
-    ID -->|auth rate limit| Redis
+C4Component
+    title Payments API — Payment Event Components
+    Container_Boundary(api, "Payments API — Spring Boot process") {
+        Component(controller, "PaymentController", "Spring MVC", "Inbound payment HTTP adapter")
+        Component(useCase, "CreatePaymentUseCase", "Application service", "Coordinates idempotency, screening, payment creation, and event recording")
+        Component(payment, "Payment", "Domain aggregate", "Owns payment state transitions")
+        Component(paymentPort, "PaymentRepository", "Domain port", "Payment persistence contract")
+        Component(paymentAdapter, "PaymentJpaAdapter", "JPA adapter", "Maps payments to PostgreSQL")
+        Component(fraudPort, "FraudScreeningPort", "Application port", "Screening contract")
+        Component(fraudAdapter, "HttpFraudScreeningAdapter", "Resilience4j and Spring RestClient", "Calls the fraud provider with bounded retries and concurrency")
+        Component(outboxPort, "OutboxPort", "Application port", "Records integration events with the aggregate transaction")
+        Component(outboxAdapter, "OutboxJpaAdapter", "JPA adapter", "Persists outbox rows")
+        Component(relay, "OutboxRelayService", "Scheduled infrastructure service", "Claims events and publishes with publisher confirms")
+        Component(consumer, "PaymentNotificationConsumer", "RabbitMQ listener", "Deduplicates events and creates notifications")
+        Component(notificationAdapter, "NotificationJpaAdapter", "JPA adapter", "Persists notifications")
+    }
+    ComponentDb_Ext(database, "PostgreSQL", "PostgreSQL 16", "Payments, outbox, processed-event, and notification tables")
+    ComponentQueue_Ext(broker, "RabbitMQ", "RabbitMQ 3.13", "Payment event exchange, notification queue, and DLQ")
+    Component_Ext(fraud, "Fraud Screening Provider", "HTTP", "External screening service")
+    Rel(controller, useCase, "Invokes")
+    Rel(useCase, payment, "Applies domain rules")
+    Rel(useCase, paymentPort, "Loads and saves payment")
+    Rel(paymentPort, paymentAdapter, "Implemented by")
+    Rel(paymentAdapter, database, "Reads and writes", "JDBC")
+    Rel(useCase, fraudPort, "Requests screening")
+    Rel(fraudPort, fraudAdapter, "Implemented by")
+    Rel(fraudAdapter, fraud, "POST screening request", "HTTP")
+    Rel(useCase, outboxPort, "Appends event in payment transaction")
+    Rel(outboxPort, outboxAdapter, "Implemented by")
+    Rel(outboxAdapter, database, "Writes outbox row", "JDBC")
+    Rel(relay, database, "Claims and marks outbox rows", "JDBC")
+    Rel(relay, broker, "Publishes after claim", "AMQP publisher confirm")
+    Rel(broker, consumer, "Delivers payment event", "AMQP")
+    Rel(consumer, notificationAdapter, "Stores notification and deduplication marker")
+    Rel(notificationAdapter, database, "Writes notification", "JDBC")
 ```
+
+## Layers, dependency rule, and CQRS
+
+The code uses `domain`, `application`, `web`, and `infrastructure` packages. There is no package literally named `adapters`: inbound web controllers and outbound persistence, cache, fraud, and messaging adapters live in `web` and `infrastructure`.
+
+| Logical layer | Code locations | Responsibility |
+|---|---|---|
+| Domain | `*/domain` | Plain Java entities, value types, state rules, and repository contracts. Domain code does not depend on Spring, JPA, Redis, RabbitMQ, or Jackson. |
+| Application | `*/application`, `shared/application` | Commands, queries, handlers, use cases, and ports such as `FraudScreeningPort`, `PaymentCachePort`, and `OutboxPort`. |
+| Adapters | `*/web`, selected `*/infrastructure` classes | HTTP controllers adapt inbound requests; JPA, Redis, and RabbitMQ implementations adapt outbound ports. |
+| Infrastructure | `*/infrastructure`, application configuration | Spring wiring, persistence mappings, transport clients, schedulers, and framework integration. |
+
+Dependencies point inward: web and infrastructure code may call application contracts and domain rules; domain code stays independent of framework and transport packages. `ArchitectureTest` checks domain purity, and `ModularityTest` checks Spring Modulith module boundaries. The `shared` module is deliberately open for cross-cutting ports and types; it does not own payment business rules.
+
+Commands change state and may append integration events in the same transaction. Queries return read-only results and do not mutate aggregates. Payment and identity use application handlers; identity currently has no query types. Notifications currently has no application package: its controller calls `NotificationRepository`, while its consumer persists delivered events. CQRS here does not mean event sourcing; see [ADR 0004](adr/0004-cqrs-without-event-sourcing.md).
 
 ## Module map
 
@@ -61,33 +127,52 @@ Infrastructure holds JPA, Redis, and RabbitMQ adapters.
 
 There is no cross-module foreign key. `payments.user_id` and `notifications.user_id` are UUID columns plus indexes. `refresh_tokens.user_id` references `users` because both tables belong to identity.
 
-## Request paths
+## Payment, outbox, broker, and dead-letter flow
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
-    participant A as identity
-    participant P as payments
+    autonumber
+    actor C as Customer
+    participant API as PaymentController
+    participant UC as CreatePaymentUseCase
+    participant F as Fraud screening adapter
     participant DB as PostgreSQL
     participant R as Outbox relay
-    participant Q as RabbitMQ
-    participant N as notifications
-    C->>A: POST /api/v1/auth/login
-    A-->>C: access JWT + refresh token
-    C->>P: POST /api/v1/payments (Bearer, Idempotency-Key)
-    P->>DB: commit idempotency lease
-    P->>P: fraud screening, no database transaction
-    P->>DB: commit payment + outbox + idempotent response
-    P-->>C: 201 PaymentResponse
-    R->>DB: SELECT FOR UPDATE SKIP LOCKED
-    R->>Q: publish payment.created
-    Q->>N: deliver
-    N->>DB: INSERT notification if event_id is new
+    participant MQ as RabbitMQ exchange and queue
+    participant N as Payment notification consumer
+    participant DLX as Dead-letter exchange
+    participant DLQ as Dead-letter queue
+    C->>API: POST /api/v1/payments + Bearer + Idempotency-Key
+    API->>UC: Create payment
+    UC->>DB: Commit short-lived idempotency lease
+    UC->>F: Screen outside payment transaction
+    F-->>UC: CLEAR, DECLINED, or fallback UNDER_REVIEW
+    UC->>DB: Commit payment + outbox event + stored response
+    API-->>C: 201 Created (or 422 for explicit decline)
+    loop Poll eligible rows
+        R->>DB: Claim with SELECT FOR UPDATE SKIP LOCKED
+        R->>MQ: Publish event and await publisher confirm
+        alt Publisher confirm succeeds
+            MQ-->>R: Confirm
+            R->>DB: Set published_at
+        else Publish or confirm fails
+            R->>DB: Schedule outbox retry; row remains unpublished
+        end
+    end
+    MQ->>N: Deliver payment event
+    alt Consumer transaction succeeds
+        N->>DB: Insert notification and processed_events marker
+        N-->>MQ: Acknowledge
+    else Permanent error or listener retries exhausted
+        N-->>MQ: Reject without requeue
+        MQ->>DLX: Dead-letter rejected message
+        DLX->>DLQ: Route with payment.created.dlq
+    end
 ```
 
-`GET /api/v1/payments/{id}` is cache-aside in Redis. PostgreSQL is read on a miss.
-Confirm and cancel evict the key after the database transaction commits.
-The diagram is the create path. Confirm and cancel append their own outbox rows and are delivered on the same queue. The relay commits the claim, then waits for the publisher confirm, before it sets `published_at`.
+The DLQ handles messages rejected by the notification consumer. A publisher failure stays in the PostgreSQL outbox and is retried by the relay; it does not go directly to the RabbitMQ DLQ. Confirm and cancel commands also append outbox events. See [messaging.md](messaging.md) for retry, routing, and consumer details.
+
+`GET /api/v1/payments/{id}` uses Redis cache-aside. Confirm and cancel evict the key after the database transaction commits. See [concurrency.md](concurrency.md) for cache stampede protection and transaction behavior.
 
 ## HTTP contract
 
@@ -114,7 +199,7 @@ Status codes the handlers return:
 |---|---|
 | 400 | Bean validation, malformed JSON, missing `Idempotency-Key`, a key longer than 120 characters, an invalid payment list `page`, `size`, or `sort`, or a typed parameter that does not convert (including a payment `id` that is not a UUID). `application/problem+json` |
 | 401 | Missing or invalid bearer token, bad login or refresh credentials, or a disabled account (`BadCredentialsException` / `AuthenticationException`). `application/problem+json` |
-| 403 | Authenticated token that does not include `USER` or `ADMIN` on `/api/v1/payments` and `/api/v1/payments/**`, or that is not `ADMIN` or `FRAUD_REVIEWER` on `POST /api/v1/payments/{id}/review`. Also the reviewer who owns the payment. `application/problem+json` |
+| 403 | Authenticated token that lacks the required role for a payment route: `USER`/`ADMIN` for most payment routes, `ADMIN`/`FRAUD_REVIEWER` for the held list and review route. Also returned when the reviewer owns the payment. `application/problem+json` |
 | 404 | Unknown payment id, or a payment the caller does not own. `ADMIN` may get any payment by id. List, confirm, and cancel stay owner-only, so a non-owner `ADMIN` is still 404 on confirm and cancel |
 | 409 | Illegal payment transition, duplicate registration email, idempotency payload mismatch, idempotency key still in `PROCESSING` and unexpired, or `DataIntegrityViolationException`. These use `type` `urn:problem-type:409`. An optimistic lock uses the same status and the title `Concurrent Modification`, with `type` `urn:problem-type:concurrent-modification` |
 | 422 | Explicit fraud decline. The body is `Payment was declined by fraud screening.` The provider reason is not included. The same key replays this response |
@@ -256,4 +341,4 @@ erDiagram
     }
 ```
 
-Flyway migrations are append-only: `V1` `outbox_events`, `processed_events`, and `idempotency_keys`; `V2` identity; `V3` payments; `V4` notifications; `V5` `idempotency_keys.lease_id`.
+Flyway migrations are append-only from V1 through V7. See [data.md](data.md) for each migration, all indexes, the V6 concurrent index build, and a query/index discrepancy found in the current source.
