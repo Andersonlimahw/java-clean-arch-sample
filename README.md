@@ -4,6 +4,12 @@ A production-grade **Payments Modular Monolith** built with **Java 25**, **Sprin
 
 Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **CQRS**, and the **Transactional Outbox Pattern** to provide reliable, highly concurrent payment execution and event-driven notifications.
 
+## Demo
+
+[![End-to-end demo of the payments platform](docs/demo/e2e-demo-thumbnail.jpg)](docs/demo/e2e-demo.mp4)
+
+[Watch the end-to-end demo (2:30, MP4)](docs/demo/e2e-demo.mp4). It was recorded on `main` at `22d9a68` running Java 25. It shows `mvn verify` (106 unit and 44 integration tests), the Compose stack, the API smoke and newman runs, pagination, the fraud-screening review flow, concurrent confirms returning 409, the outbox to RabbitMQ flow with an empty DLQ, a k6 run, and traces, metrics and dashboards in Jaeger, Prometheus and Grafana. Tokens and passwords in the recording are masked.
+
 ## Architecture
 
 Diagrams, the HTTP contract, and the consistency model: [docs/architecture.md](docs/architecture.md).
