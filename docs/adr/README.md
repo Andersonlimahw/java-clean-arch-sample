@@ -2,6 +2,8 @@
 
 Operational behavior that these decisions refer to is in [../architecture.md](../architecture.md). Broker delivery is also in [../messaging.md](../messaging.md). Metrics, traces, and logs are in [../observability.md](../observability.md). When a number differs, the architecture page is the one checked against the code.
 
+For the full guide index, see [../README.md](../README.md). Implementation guides: [API](../api.md), [data](../data.md), [resilience](../resilience.md), [concurrency](../concurrency.md), [testing](../testing.md), and [deployment](../deploy.md).
+
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-modular-monolith-vertical-slices.md) | Modular monolith with vertical slices (trip planner) | Superseded by [0002](0002-payments-pivot.md) (domain) and [0003](0003-modular-monolith-vs-microservices.md) (structure) |

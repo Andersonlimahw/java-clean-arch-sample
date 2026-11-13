@@ -64,7 +64,7 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 - Jaeger UI: `http://127.0.0.1:16686`
 - Prometheus: `http://127.0.0.1:9090`
-- Grafana: `http://127.0.0.1:3000` (user `payments`, password `local-observability-only`, both overridable with `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD`). The port is bound to loopback.
+- Grafana: `http://127.0.0.1:3000`. Sign in with the locally configured `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD`; keep local credential values out of documentation and version control. The port is bound to loopback.
 
 Logs profile (Elasticsearch capped at 512 MB heap, plus Kibana):
 

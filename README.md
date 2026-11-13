@@ -12,11 +12,11 @@ Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **C
 
 ## Architecture
 
-Diagrams, the HTTP contract, and the consistency model: [docs/architecture.md](docs/architecture.md).
-Trade-offs: [docs/adr](docs/adr/README.md).
+Architecture, API, persistence, resilience, concurrency, observability, and testing guides: [docs/README.md](docs/README.md).
+System diagrams and module boundaries: [docs/architecture.md](docs/architecture.md). Trade-offs: [docs/adr](docs/adr/README.md).
 
 - **Modular Monolith**: base package `com.muse.payments` with verifiable architectural boundaries.
-  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Payment routes require `USER` or `ADMIN`. Other authenticated routes do not authorize by role.
+  - `identity`: User registration, authentication, token rotation, and role claims on the access token. Most payment routes require `USER` or `ADMIN`; payment review/list routes also use `FRAUD_REVIEWER`. See the [API role matrix](docs/api.md).
   - `payments`: Payment aggregate root, state machine (`PENDING` → `COMPLETED` / `CANCELLED`, and `UNDER_REVIEW` → `PENDING` or `CANCELLED`), fraud screening, idempotency key deduplication, and optimistic locking.
   - `notifications`: Event-driven notification dispatch via RabbitMQ with idempotent consumer (`processed_events`).
   - `shared`: Common domain building blocks, the outbox port, the processed-event store, security filters, and RFC 7807 problem details.
@@ -37,7 +37,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER`, `ROLE_ADM
 | `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN`. `page`/`size`/`sort` outside the documented bounds are **400** (they used to be clamped) |
 | `GET /api/v1/payments/under-review` | `ADMIN` or `FRAUD_REVIEWER` | Payments in `UNDER_REVIEW`, any owner. Same `page`/`size`/`sort` rules as the owner list |
 | `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. `PENDING` only. `UNDER_REVIEW` is **409**. Another user's payment is **404** |
-| `POST /api/v1/payments/{id}/review?decision=APPROVE\|REJECT` | `ADMIN` or `FRAUD_REVIEWER` | Not the owner. `UNDER_REVIEW` only. `APPROVE` makes it `PENDING` and clears the screening reason. `REJECT` cancels it with the reviewer's reason. The owner, including an `ADMIN` who created the payment, is **403**. |
+| `POST /api/v1/payments/{id}/review` | `ADMIN` or `FRAUD_REVIEWER` | Requires `decision=APPROVE` or `decision=REJECT`. Not the owner. `UNDER_REVIEW` only. `APPROVE` makes it `PENDING` and clears the screening reason. `REJECT` cancels it with the reviewer's reason. The owner, including an `ADMIN` who created the payment, is **403**. |
 | `POST /api/v1/payments/{id}/cancel` | `USER` or `ADMIN` | Owner only. Another user's payment is **404** |
 | `GET /api/v1/notifications` | Any authenticated user | The caller's own notifications |
 | Actuator health, info, prometheus, and OpenAPI | Public | — |
@@ -52,29 +52,67 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER`, `ROLE_ADM
 - Docker Engine (for Testcontainers and local compose)
 
 ### Running tests
+
+Unit tests:
+
+```bash
+mvn -q test
+```
+
+Integration tests only:
+
+```bash
+mvn -q test-compile failsafe:integration-test failsafe:verify
+```
+
+Full build with unit and integration tests:
+
 ```bash
 mvn clean verify
 ```
 
-On macOS with Colima, Testcontainers can fail while starting Ryuk:
+The project has no Maven Wrapper; use an installed Maven. For the Colima socket/Ryuk setup on macOS, see [Testing guide — macOS + Colima](docs/testing.md#macos--colima). That section documents `TESTCONTAINERS_RYUK_DISABLED` and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`.
 
-```text
-mkdir .../docker.sock: operation not supported
-```
+### Newman and k6
 
-Ryuk bind-mounts the Docker socket. Colima's virtiofs mount rejects `mkdir` on that path. This suite only starts Postgres, RabbitMQ, and Redis, so Ryuk is not required. Disable it for that run:
+With the local API running and ready, execute the ordered HTTP collection:
 
 ```bash
-TESTCONTAINERS_RYUK_DISABLED=true mvn clean verify
+newman run src/test/postman/payments-v1.postman_collection.json \
+  --env-var baseUrl=http://127.0.0.1:8080
 ```
 
-Testcontainers 1.21.4 reads that environment variable only. A JVM system property with the same name does not turn Ryuk off. Maven does not set the variable, so Ryuk stays on for Linux and Docker Desktop and reaps containers if the JVM is killed.
+Seed the payment-list dataset and run the k6 scenarios:
 
-`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` is the socket path inside the Colima VM. Ryuk, and Testcontainers' own Compose runner, read it when they still start. With Ryuk disabled, `mvn verify` does not read it.
+```bash
+./perf/seed-payments.sh
+./perf/run-k6.sh
+```
+
+The [testing guide](docs/testing.md) explains the suite split, Colima variables, Newman behavior, and how to read k6 p95. The [performance guide](perf/README.md) has dataset and scenario details.
 
 ### Running locally
-Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`).
-Start PostgreSQL, Redis, and RabbitMQ, then the application, from the repository root as described in [docs/deploy.md](docs/deploy.md). That runbook uses the Compose V2 plugin (`docker compose`). The V1 binary is `docker-compose` (hyphen). Both read `docker-compose.yml`. If `docker compose` is not on `PATH`, run the same arguments with `docker-compose`. `scripts/ci-local.sh` tries the plugin first, then the binary. The runbook sources `.env.example` so `DB_PASSWORD` and `REDIS_PASSWORD` match Compose. `mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
+Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`). The repository uses the Compose V2 plugin (`docker compose`); the V1 binary is `docker-compose` (hyphen). Both read `docker-compose.yml`.
+
+To run the full local stack, copy the example environment file and start Compose from the repository root:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+curl -fsS http://127.0.0.1:8080/actuator/health/readiness
+```
+
+To run the application JVM on the host instead, start only its dependencies and source the local environment file:
+
+```bash
+docker compose up -d postgres redis rabbitmq fraud-screening
+set -a
+source .env
+set +a
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+```
+
+`mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
 
 ```bash
 ./scripts/validate-api.sh
