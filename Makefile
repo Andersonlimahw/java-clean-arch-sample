@@ -1,12 +1,13 @@
 COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
 
-.PHONY: help up down restart debug logs ps
+.PHONY: help up down restart debug logs ps clean
 
 help:
 	@echo "Available commands:"
 	@echo "  make up       - Start all services in background"
 	@echo "  make debug    - Start all services with app in debug mode (JDWP port 5005)"
 	@echo "  make down     - Stop and remove containers"
+	@echo "  make clean    - Stop and remove containers, volumes and orphans"
 	@echo "  make restart  - Restart all containers"
 	@echo "  make logs     - Follow logs of the app container"
 	@echo "  make ps       - List running containers"
@@ -19,6 +20,9 @@ debug:
 
 down:
 	$(COMPOSE) down
+
+clean:
+	$(COMPOSE) down -v --remove-orphans
 
 restart:
 	$(COMPOSE) restart
