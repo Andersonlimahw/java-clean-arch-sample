@@ -11,7 +11,7 @@ The API needs authenticated callers, roles, and ownership. An external identity 
 
 Identity is inside the monolith.
 
-- Passwords are BCrypt strength 12 (`BCryptPasswordEncoder(12)` in `SecurityConfig`).
+- Passwords are BCrypt strength 12 (`BCryptPasswordEncoder(12)` in `SecurityConfig`). Since [ADR 0015](0015-virtual-thread-hot-paths.md) the hash runs on a platform-thread pool.
 - Access tokens are RS256 JWTs. TTL is `app.jwt.access-token-ttl` / `ACCESS_TOKEN_TTL`, default `PT15M`. Claims set by `JwtTokenIssuer`: `sub` (user id), `roles`, `iss`, `aud`, `exp`, `iat`, `jti`, `typ=access`.
 - The `roles` claim is mapped to `ROLE_*` authorities. Registration stores `USER`. `ADMIN` is the other role the payment API accepts.
 - `/api/v1/payments` and `/api/v1/payments/**` require `USER` or `ADMIN` (`hasAnyRole` in `SecurityConfig`). A missing or invalid token is **401** `application/problem+json`. A valid token without those roles is **403** `application/problem+json`. Other authenticated routes, including `GET /api/v1/notifications`, only require a valid token.

@@ -25,7 +25,7 @@ USER appuser:appgroup
 
 ENV PORT=8080 \
     SPRING_PROFILES_ACTIVE=prod \
-    JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+    JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -XX:+UseCompactObjectHeaders"
 
 EXPOSE 8080 5005
 

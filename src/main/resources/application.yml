@@ -94,6 +94,10 @@ logging:
     level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{correlationId:-}]"
 
 app:
+  security:
+    # Platform threads that run BCrypt, so hashing does not occupy virtual-thread carriers.
+    # 0 means half of the available processors, at least one.
+    password-hashing-threads: ${PASSWORD_HASHING_THREADS:0}
   idempotency:
     cleanup-interval-ms: 3600000
     # In-flight lease only. Completion extends the row to 24h. Long enough for screening plus persist.

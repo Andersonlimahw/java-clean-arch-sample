@@ -20,3 +20,4 @@ For the full guide index, see [../README.md](../README.md). Implementation guide
 | [0012](0012-fraud-screening-failure-policy.md) | Fraud screening never approves on failure | Accepted |
 | [0013](0013-java-25-lts.md) | Java 25 LTS | Accepted |
 | [0014](0014-web-boundary-and-strict-local-gate.md) | Application boundaries and strict local validation | Accepted |
+| [0015](0015-virtual-thread-hot-paths.md) | Virtual-thread-aware hot paths and batched outbox relay | Accepted |

@@ -5,6 +5,7 @@ import com.muse.payments.shared.web.CorrelationContext;
 import com.muse.payments.shared.web.GlobalExceptionHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -80,9 +81,15 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+    /**
+     * BCrypt cost 12, hashed off the virtual-thread carriers. {@code app.security.password-hashing-threads}
+     * of 0 means half of the available processors, at least one.
+     */
+    @Bean(destroyMethod = "close")
+    public PasswordEncoder passwordEncoder(
+            @Value("${app.security.password-hashing-threads:0}") int hashingThreads) {
+        int threads = hashingThreads > 0 ? hashingThreads : OffloadedPasswordEncoder.defaultThreads();
+        return new OffloadedPasswordEncoder(new BCryptPasswordEncoder(12), threads);
     }
 
     @Bean

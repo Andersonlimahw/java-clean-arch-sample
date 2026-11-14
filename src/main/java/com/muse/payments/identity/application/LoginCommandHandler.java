@@ -10,7 +10,6 @@ import com.muse.payments.shared.security.JwtTokenIssuer;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -38,8 +37,11 @@ public class LoginCommandHandler implements CommandHandler<LoginCommand, AuthTok
         this.jwtProperties = Objects.requireNonNull(jwtProperties);
     }
 
+    /**
+     * Not one transaction on purpose. The user read and the refresh-token insert each run in
+     * the repository's own transaction, so no database connection is held while BCrypt runs.
+     */
     @Override
-    @Transactional
     public AuthTokensResponse handle(LoginCommand command) {
         Objects.requireNonNull(command, "command cannot be null");
 

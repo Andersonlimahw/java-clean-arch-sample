@@ -13,7 +13,7 @@ This is the machine-readable documentation index. Read the linked pages for curr
 - [Postman validation](test-plans/postman-validation.md): Real local API execution, 30 examples, 105 assertions, and Newman export caveat.
 - [Refactor validation](test-plans/refactor-validation.md): Strict local CI results, Kubernetes validation, 154 Maven tests, and the outbox fixture isolation fix.
 - [Data model](data.md): Flyway migrations, constraints, indexes, and schema/query reconciliation notes.
-- [Concurrency](concurrency.md): Optimistic locking, cache stampede protection, leases, and outbox claims.
+- [Concurrency](concurrency.md): Optimistic locking, virtual-thread rules, cache stampede protection, leases, and batched outbox claims.
 - [Resilience](resilience.md): Fraud-screening retries, circuit breakers, bulkheads, time limits, and fallback policy.
 - [Messaging](messaging.md): Outbox relay, RabbitMQ routing, retry, deduplication, and DLQ behavior.
 - [Observability](observability.md): Tracing, metrics, logs, queue depth, and local dashboards.
@@ -26,6 +26,7 @@ This is the machine-readable documentation index. Read the linked pages for curr
 
 - [ADR index](adr/README.md): Accepted and superseded decisions.
 - [ADR 0014](adr/0014-web-boundary-and-strict-local-gate.md): Application boundary for notifications and strict local validation.
+- [ADR 0015](adr/0015-virtual-thread-hot-paths.md): Password hashing off the virtual-thread carriers and outside transactions, batched outbox relay, compact object headers, and the Java 25 features not adopted.
 
 ## Evaluation
 
