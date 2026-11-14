@@ -35,7 +35,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Validate Docker Compose Configuration
-        run: docker compose config
+        run: |
+          docker compose config
+          docker compose -f docker-compose.yml -f docker-compose.debug.yml config
 
       - name: Validate Kubernetes Manifests with Kubeconform
         run: |

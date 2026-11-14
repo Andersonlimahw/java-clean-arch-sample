@@ -17,10 +17,12 @@ echo "    ✓ Shell scripts syntax OK"
 echo "==> 2. Validating Docker Compose configuration..."
 if docker compose version &> /dev/null; then
     docker compose config > /dev/null
-    echo "    ✓ Docker Compose config valid (docker compose)"
+    docker compose -f docker-compose.yml -f docker-compose.debug.yml config > /dev/null
+    echo "    ✓ Docker Compose config valid (docker compose, base + debug)"
 elif command -v docker-compose &> /dev/null; then
     docker-compose config > /dev/null
-    echo "    ✓ Docker Compose config valid (docker-compose)"
+    docker-compose -f docker-compose.yml -f docker-compose.debug.yml config > /dev/null
+    echo "    ✓ Docker Compose config valid (docker-compose, base + debug)"
 else
     echo "    ✗ Docker Compose command not found" >&2
     exit 1

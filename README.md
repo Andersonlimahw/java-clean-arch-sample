@@ -102,6 +102,14 @@ docker compose up -d --build
 curl -fsS http://127.0.0.1:8080/actuator/health/readiness
 ```
 
+To run with **remote debugging** enabled (JDWP agent on port `5005`, attachable from IntelliJ/VS Code/Eclipse):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+# or using Makefile:
+make debug
+```
+
 To run the application JVM on the host instead, start only its dependencies and source the local environment file:
 
 ```bash

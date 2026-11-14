@@ -1,0 +1,20 @@
+# Overlay for remote debugging the Spring Boot application (JDWP port 5005).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d
+#   (or with standalone binary: docker-compose -f docker-compose.yml -f docker-compose.debug.yml up -d)
+#
+# To rebuild and start with debug:
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+#
+# Remote debug connection:
+#   Host: 127.0.0.1
+#   Port: 5005
+#   Transport: Socket (Attach)
+#   Suspend: no (application boots immediately, debugger attaches anytime)
+services:
+  app:
+    environment:
+      JAVA_TOOL_OPTIONS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+    ports:
+      - "127.0.0.1:5005:5005"

@@ -67,6 +67,14 @@ docker compose up -d --build --wait
 ./scripts/validate-api.sh
 ```
 
+To run with remote debugging enabled (JDWP agent on port 5005, attachable from IDE):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+# or:
+make debug
+```
+
 ## Railway (preferred)
 
 `railway.json` builds the Dockerfile and checks `/actuator/health/readiness`.
