@@ -1,0 +1,126 @@
+package com.muse.payments.__PKG__.web;
+
+import com.muse.payments.__PKG__.application.Create__Entity__Command;
+import com.muse.payments.__PKG__.application.Create__Entity__CommandHandler;
+import com.muse.payments.__PKG__.application.Create__Entity__Request;
+import com.muse.payments.__PKG__.application.Delete__Entity__Command;
+import com.muse.payments.__PKG__.application.Delete__Entity__CommandHandler;
+import com.muse.payments.__PKG__.application.Get__Entity__ByIdQuery;
+import com.muse.payments.__PKG__.application.Get__Entity__ByIdQueryHandler;
+import com.muse.payments.__PKG__.application.List__Entities__Query;
+import com.muse.payments.__PKG__.application.List__Entities__QueryHandler;
+import com.muse.payments.__PKG__.application.PageResponse;
+import com.muse.payments.__PKG__.application.__Entity__Response;
+import com.muse.payments.__PKG__.application.Update__Entity__Command;
+import com.muse.payments.__PKG__.application.Update__Entity__CommandHandler;
+import com.muse.payments.__PKG__.application.Update__Entity__Request;
+import com.muse.payments.shared.security.CurrentUser;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.net.URI;
+import java.util.Objects;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/__PATH__")
+@Tag(name = "__Entities__", description = "__Label__ management. Requires role USER or ADMIN. Every route is owner-scoped; another user's __LABEL__ is 404.")
+@SecurityRequirement(name = "BearerAuth")
+public class __Entity__Controller {
+
+    private final Create__Entity__CommandHandler create__Entity__Handler;
+    private final Update__Entity__CommandHandler update__Entity__Handler;
+    private final Delete__Entity__CommandHandler delete__Entity__Handler;
+    private final Get__Entity__ByIdQueryHandler get__Entity__ByIdHandler;
+    private final List__Entities__QueryHandler list__Entities__Handler;
+
+    public __Entity__Controller(
+            Create__Entity__CommandHandler create__Entity__Handler,
+            Update__Entity__CommandHandler update__Entity__Handler,
+            Delete__Entity__CommandHandler delete__Entity__Handler,
+            Get__Entity__ByIdQueryHandler get__Entity__ByIdHandler,
+            List__Entities__QueryHandler list__Entities__Handler
+    ) {
+        this.create__Entity__Handler = Objects.requireNonNull(create__Entity__Handler);
+        this.update__Entity__Handler = Objects.requireNonNull(update__Entity__Handler);
+        this.delete__Entity__Handler = Objects.requireNonNull(delete__Entity__Handler);
+        this.get__Entity__ByIdHandler = Objects.requireNonNull(get__Entity__ByIdHandler);
+        this.list__Entities__Handler = Objects.requireNonNull(list__Entities__Handler);
+    }
+
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Create a __LABEL__ owned by the caller")
+    public ResponseEntity<__Entity__Response> create__Entity__(
+            @Valid @RequestBody Create__Entity__Request request,
+            @Parameter(hidden = true) CurrentUser currentUser
+    ) {
+        __Entity__Response response = create__Entity__Handler.handle(
+                new Create__Entity__Command(currentUser.userId(), request.name(), request.description()));
+        return ResponseEntity.created(URI.create("/api/v1/__PATH__/" + response.id())).body(response);
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get a __LABEL__ by id. Another user's __LABEL__ is 404.")
+    public ResponseEntity<__Entity__Response> get__Entity__ById(
+            @PathVariable UUID id,
+            @Parameter(hidden = true) CurrentUser currentUser
+    ) {
+        return ResponseEntity.ok(get__Entity__ByIdHandler.handle(new Get__Entity__ByIdQuery(id, currentUser.userId())));
+    }
+
+    @GetMapping
+    @Operation(
+            summary = "List the caller's __LABEL__ records with offset pagination",
+            description = "Default page is 0 and default size is 20. page must be >= 0, size must be from 1 to 100, "
+                    + "and page * size must be <= 10000. sort is case-sensitive: createdAt,desc (default) or "
+                    + "createdAt,asc. Values outside these bounds are 400 and are not clamped."
+    )
+    public ResponseEntity<PageResponse<__Entity__Response>> list__Entities__(
+            @Parameter(schema = @Schema(type = "integer", minimum = "0", defaultValue = "0"))
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(schema = @Schema(type = "integer", minimum = "1", maximum = "100", defaultValue = "20"))
+            @RequestParam(defaultValue = "20") int size,
+            @Parameter(schema = @Schema(allowableValues = {"createdAt,desc", "createdAt,asc"}, defaultValue = "createdAt,desc"))
+            @RequestParam(required = false) String sort,
+            @Parameter(hidden = true) CurrentUser currentUser
+    ) {
+        return ResponseEntity.ok(list__Entities__Handler.handle(
+                new List__Entities__Query(currentUser.userId(), page, size, sort)));
+    }
+
+    @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Replace a __LABEL__. version must be the value last read; a stale version is 409.")
+    public ResponseEntity<__Entity__Response> update__Entity__(
+            @PathVariable UUID id,
+            @Valid @RequestBody Update__Entity__Request request,
+            @Parameter(hidden = true) CurrentUser currentUser
+    ) {
+        return ResponseEntity.ok(update__Entity__Handler.handle(new Update__Entity__Command(
+                id, currentUser.userId(), request.name(), request.description(), request.version())));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete a __LABEL__. Returns 204 with no body.")
+    public ResponseEntity<Void> delete__Entity__(
+            @PathVariable UUID id,
+            @Parameter(hidden = true) CurrentUser currentUser
+    ) {
+        delete__Entity__Handler.handle(new Delete__Entity__Command(id, currentUser.userId()));
+        return ResponseEntity.noContent().build();
+    }
+}

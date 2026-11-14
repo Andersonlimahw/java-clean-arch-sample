@@ -1,0 +1,55 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__Repository;
+import com.muse.payments.__PKG__.domain.__Entity__Sort;
+import com.muse.payments.shared.application.QueryHandler;
+import com.muse.payments.shared.domain.ValidationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Objects;
+
+@Service
+public class List__Entities__QueryHandler implements QueryHandler<List__Entities__Query, PageResponse<__Entity__Response>> {
+
+    public static final int MAX_PAGE_SIZE = 100;
+    public static final int MAX_OFFSET = 10_000;
+
+    private final __Entity__Repository __entity__Repository;
+
+    public List__Entities__QueryHandler(__Entity__Repository __entity__Repository) {
+        this.__entity__Repository = Objects.requireNonNull(__entity__Repository);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<__Entity__Response> handle(List__Entities__Query query) {
+        Objects.requireNonNull(query, "query must not be null");
+
+        int page = query.page();
+        int size = query.size();
+        __Entity__Sort sort = validated(page, size, query.sort());
+
+        List<__Entity__Response> items = __entity__Repository.findByUserId(query.userId(), page, size, sort)
+                .stream()
+                .map(__Entity__Response::from)
+                .toList();
+        long total = __entity__Repository.countByUserId(query.userId());
+
+        return PageResponse.of(items, page, size, total, __Entity__Sorts.canonical(sort));
+    }
+
+    static __Entity__Sort validated(int page, int size, String sort) {
+        if (page < 0) {
+            throw new ValidationException("page must be greater than or equal to 0");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new ValidationException("size must be between 1 and 100");
+        }
+        if ((long) page * (long) size > MAX_OFFSET) {
+            throw new ValidationException("page is too large; page * size must be <= " + MAX_OFFSET);
+        }
+        return __Entity__Sorts.parse(sort);
+    }
+}

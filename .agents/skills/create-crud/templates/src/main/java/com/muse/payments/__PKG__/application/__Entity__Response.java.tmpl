@@ -1,0 +1,29 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__;
+
+import java.time.Instant;
+import java.util.UUID;
+
+public record __Entity__Response(
+        UUID id,
+        UUID userId,
+        String name,
+        String description,
+        Instant createdAt,
+        Instant updatedAt,
+        Long version
+) {
+
+    public static __Entity__Response from(__Entity__ __entity__) {
+        return new __Entity__Response(
+                __entity__.getId(),
+                __entity__.getUserId(),
+                __entity__.getName(),
+                __entity__.getDescription(),
+                __entity__.getCreatedAt(),
+                __entity__.getUpdatedAt(),
+                __entity__.getVersion()
+        );
+    }
+}

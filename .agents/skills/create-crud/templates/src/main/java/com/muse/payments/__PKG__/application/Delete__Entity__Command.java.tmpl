@@ -1,0 +1,11 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.shared.application.Command;
+
+import java.util.UUID;
+
+public record Delete__Entity__Command(
+        UUID __entity__Id,
+        UUID userId
+) implements Command<Void> {
+}

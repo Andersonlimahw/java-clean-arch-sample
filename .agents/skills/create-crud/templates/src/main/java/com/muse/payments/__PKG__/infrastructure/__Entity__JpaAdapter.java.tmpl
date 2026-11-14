@@ -1,0 +1,62 @@
+package com.muse.payments.__PKG__.infrastructure;
+
+import com.muse.payments.__PKG__.domain.__Entity__;
+import com.muse.payments.__PKG__.domain.__Entity__Repository;
+import com.muse.payments.__PKG__.domain.__Entity__Sort;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+@Component
+public class __Entity__JpaAdapter implements __Entity__Repository {
+
+    private final __Entity__JpaRepository __entity__JpaRepository;
+
+    public __Entity__JpaAdapter(__Entity__JpaRepository __entity__JpaRepository) {
+        this.__entity__JpaRepository = Objects.requireNonNull(__entity__JpaRepository);
+    }
+
+    @Override
+    public __Entity__ save(__Entity__ __entity__) {
+        __Entity__JpaEntity saved = __entity__JpaRepository.saveAndFlush(__Entity__JpaEntity.fromDomain(__entity__));
+        return saved.toDomain();
+    }
+
+    @Override
+    public Optional<__Entity__> findById(UUID id) {
+        return __entity__JpaRepository.findById(id).map(__Entity__JpaEntity::toDomain);
+    }
+
+    @Override
+    public List<__Entity__> findByUserId(UUID userId, int page, int size, __Entity__Sort sort) {
+        return __entity__JpaRepository.findByUserId(userId, page(page, size, sort))
+                .stream()
+                .map(__Entity__JpaEntity::toDomain)
+                .toList();
+    }
+
+    @Override
+    public long countByUserId(UUID userId) {
+        return __entity__JpaRepository.countByUserId(userId);
+    }
+
+    @Override
+    public void delete(__Entity__ __entity__) {
+        __entity__JpaRepository.deleteById(__entity__.getId());
+        __entity__JpaRepository.flush();
+    }
+
+    private static PageRequest page(int page, int size, __Entity__Sort sort) {
+        Objects.requireNonNull(sort, "sort must not be null");
+        Sort order = switch (sort) {
+            case CREATED_AT_ASC -> Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
+            case CREATED_AT_DESC -> Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        };
+        return PageRequest.of(page, size, order);
+    }
+}

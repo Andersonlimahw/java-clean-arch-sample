@@ -1,0 +1,6 @@
+description = "flyway-migration: follow the canonical repository skill"
+prompt = """
+Read AGENTS.md, then .agents/skills/flyway-migration/SKILL.md and follow that workflow.
+Arguments: {{args}}
+Respect the repository scope and authorization rules. Report actual validation evidence.
+"""

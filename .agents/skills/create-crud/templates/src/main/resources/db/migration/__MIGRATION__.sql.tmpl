@@ -1,0 +1,15 @@
+-- __Label__ module. user_id points at the identity module by value only:
+-- foreign keys never cross module boundaries.
+CREATE TABLE __TABLE__ (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    description VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0
+);
+
+-- Serves the owner-scoped list in both sort directions, with id as the tie-breaker.
+CREATE INDEX idx___TABLE___user_created_at_id
+    ON __TABLE__ (user_id, created_at DESC, id DESC);
