@@ -20,9 +20,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
@@ -33,7 +36,10 @@ import java.util.concurrent.TimeoutException;
 public class OutboxRelayService {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxRelayService.class);
-    private static final int BATCH_SIZE = 50;
+    /** Rows claimed by one transaction and published as one pipelined batch. */
+    static final int BATCH_SIZE = 50;
+    /** Upper bound of batches per poll, so one poll stays bounded while a backlog drains. */
+    static final int MAX_BATCHES_PER_POLL = 20;
     /**
      * Extra time the claim stays invisible to other relays after the confirm wait ends,
      * so a slow commit cannot overlap the next claim of the same row.
@@ -77,58 +83,114 @@ public class OutboxRelayService {
         this.confirmTimeout = confirmTimeout;
     }
 
+    /**
+     * Drains due outbox rows in batches. One transaction claims a batch, the batch is sent
+     * to the broker without waiting between messages, the publisher confirms are awaited
+     * together, and one transaction marks every confirmed row. A failed row is rescheduled
+     * on its own, so one bad event does not hold back the rest of the batch.
+     *
+     * <p>A batch holds at most one event per aggregate. A later event of the same aggregate
+     * is left unclaimed and goes out in a following batch, after the earlier one was confirmed.
+     */
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}")
     public int relayPendingEvents() {
         int publishedCount = 0;
-        for (int i = 0; i < BATCH_SIZE; i++) {
+        for (int i = 0; i < MAX_BATCHES_PER_POLL; i++) {
             if (Thread.currentThread().isInterrupted()) {
                 break;
             }
-            PublishCandidate candidate = transactionTemplate.execute(status -> claimNext());
-            if (candidate == null) {
+            ClaimedBatch batch = transactionTemplate.execute(status -> claimBatch());
+            if (batch == null || batch.candidates().isEmpty()) {
                 break;
             }
-            try {
-                publish(candidate);
-                markPublished(candidate.id());
-                publishedCount++;
-                log.debug("Published outbox event {} of type {} with routing key {}",
-                        candidate.id(), candidate.eventType(), candidate.routingKey());
-            } catch (Exception ex) {
-                scheduleRetry(candidate.id(), ex);
-                if (Thread.currentThread().isInterrupted() || causedByInterrupt(ex)) {
-                    break;
-                }
+            BatchResult result = publishBatch(batch.candidates());
+            publishedCount += result.published();
+            if (result.interrupted() || !batch.moreDue()) {
+                break;
             }
         }
         return publishedCount;
     }
 
-    private PublishCandidate claimNext() {
-        List<OutboxEventEntity> pending = outboxRepository.findPendingForPublishing(Instant.now(), 1);
+    private ClaimedBatch claimBatch() {
+        List<OutboxEventEntity> pending = outboxRepository.findPendingForPublishing(Instant.now(), BATCH_SIZE);
         if (pending.isEmpty()) {
-            return null;
+            return new ClaimedBatch(List.of(), false);
         }
-        OutboxEventEntity event = pending.get(0);
+        Set<UUID> aggregates = new HashSet<>();
+        List<PublishCandidate> candidates = new ArrayList<>(pending.size());
+        List<UUID> ids = new ArrayList<>(pending.size());
+        for (OutboxEventEntity event : pending) {
+            if (!aggregates.add(event.getAggregateId())) {
+                continue;
+            }
+            ids.add(event.getId());
+            candidates.add(new PublishCandidate(
+                    event.getId(),
+                    event.getEventType(),
+                    event.getPayload(),
+                    event.getHeaders(),
+                    event.getAggregateType(),
+                    event.getAggregateId(),
+                    event.getOccurredAt(),
+                    resolveRoutingKey(event.getEventType())
+            ));
+        }
         Instant leaseUntil = Instant.now().plus(confirmTimeout).plus(CLAIM_MARGIN);
-        event.setNextAttemptAt(leaseUntil);
-        PublishCandidate candidate = new PublishCandidate(
-                event.getId(),
-                event.getEventType(),
-                event.getPayload(),
-                event.getHeaders(),
-                event.getAggregateType(),
-                event.getAggregateId(),
-                resolveRoutingKey(event.getEventType())
-        );
-        int claimed = outboxRepository.claimUntil(event.getId(), leaseUntil);
-        if (claimed != 1) {
-            throw new IllegalStateException("Failed to claim outbox event " + event.getId());
+        int claimed = outboxRepository.claimAllUntil(ids, leaseUntil);
+        if (claimed != ids.size()) {
+            throw new IllegalStateException(
+                    "Claimed " + claimed + " of " + ids.size() + " locked outbox events");
         }
-        return candidate;
+        boolean moreDue = pending.size() == BATCH_SIZE || candidates.size() < pending.size();
+        return new ClaimedBatch(candidates, moreDue);
     }
 
-    private void publish(PublishCandidate event) throws Exception {
+    private BatchResult publishBatch(List<PublishCandidate> batch) {
+        List<InFlight> inFlight = new ArrayList<>(batch.size());
+        boolean interrupted = false;
+        for (PublishCandidate candidate : batch) {
+            if (Thread.currentThread().isInterrupted()) {
+                // Unsent rows keep their claim and become due again when the lease expires.
+                interrupted = true;
+                break;
+            }
+            try {
+                inFlight.add(new InFlight(candidate, send(candidate), System.nanoTime()));
+            } catch (Exception ex) {
+                scheduleRetry(candidate.id(), ex);
+            }
+        }
+
+        List<PublishCandidate> confirmed = new ArrayList<>(inFlight.size());
+        for (InFlight sent : inFlight) {
+            if (interrupted && !sent.correlation().getFuture().isDone()) {
+                // No confirm was read for this row. It stays claimed until the lease expires.
+                continue;
+            }
+            try {
+                Duration elapsed = Duration.ofNanos(System.nanoTime() - sent.sentAtNanos());
+                Duration remaining = confirmTimeout.minus(elapsed);
+                awaitPublisherConfirm(
+                        sent.correlation(),
+                        sent.candidate().id(),
+                        remaining.isNegative() ? Duration.ZERO : remaining);
+                confirmed.add(sent.candidate());
+            } catch (Exception ex) {
+                scheduleRetry(sent.candidate().id(), ex);
+                if (Thread.currentThread().isInterrupted() || causedByInterrupt(ex)) {
+                    interrupted = true;
+                }
+            }
+        }
+
+        if (!confirmed.isEmpty()) {
+            markPublished(confirmed);
+        }
+        return new BatchResult(confirmed.size(), interrupted);
+    }
+
+    private CorrelationData send(PublishCandidate event) {
         Map<String, Object> headers = readHeaders(event.headers());
         String correlationId = correlationId(headers);
         CorrelationData correlation = new CorrelationData(UUID.randomUUID().toString());
@@ -148,25 +210,28 @@ public class OutboxRelayService {
                 },
                 correlation
         ));
-        awaitPublisherConfirm(correlation, event.id());
+        return correlation;
     }
 
-    private void markPublished(UUID eventId) {
-        transactionTemplate.executeWithoutResult(status -> {
-            OutboxEventEntity event = outboxRepository.findById(eventId)
-                    .orElseThrow(() -> new IllegalStateException("Outbox event disappeared: " + eventId));
-            if (event.getPublishedAt() == null) {
-                Instant publishedAt = Instant.now();
-                event.setPublishedAt(publishedAt);
-                recordPublishLag(event.getOccurredAt(), publishedAt);
-            }
-        });
+    private void markPublished(List<PublishCandidate> confirmed) {
+        Instant publishedAt = Instant.now();
+        List<UUID> ids = confirmed.stream().map(PublishCandidate::id).toList();
+        transactionTemplate.executeWithoutResult(status -> outboxRepository.markPublished(ids, publishedAt));
+        for (PublishCandidate event : confirmed) {
+            recordPublishLag(event.occurredAt(), publishedAt);
+            log.debug("Published outbox event {} of type {} with routing key {}",
+                    event.id(), event.eventType(), event.routingKey());
+        }
     }
 
     void awaitPublisherConfirm(CorrelationData correlation, UUID eventId) throws Exception {
+        awaitPublisherConfirm(correlation, eventId, confirmTimeout);
+    }
+
+    void awaitPublisherConfirm(CorrelationData correlation, UUID eventId, Duration timeout) throws Exception {
         CorrelationData.Confirm confirm;
         try {
-            confirm = correlation.getFuture().get(confirmTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            confirm = correlation.getFuture().get(timeout.toNanos(), TimeUnit.NANOSECONDS);
         } catch (TimeoutException ex) {
             throw new IllegalStateException("Publisher confirm timed out for outbox event " + eventId, ex);
         } catch (InterruptedException ex) {
@@ -269,7 +334,18 @@ public class OutboxRelayService {
             String headers,
             String aggregateType,
             UUID aggregateId,
+            Instant occurredAt,
             String routingKey
     ) {
+    }
+
+    /** {@code moreDue} is true when the query was full or a same-aggregate row was left for the next batch. */
+    private record ClaimedBatch(List<PublishCandidate> candidates, boolean moreDue) {
+    }
+
+    private record InFlight(PublishCandidate candidate, CorrelationData correlation, long sentAtNanos) {
+    }
+
+    private record BatchResult(int published, boolean interrupted) {
     }
 }

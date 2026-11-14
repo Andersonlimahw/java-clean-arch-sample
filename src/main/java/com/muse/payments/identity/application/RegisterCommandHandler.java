@@ -6,7 +6,6 @@ import com.muse.payments.shared.application.CommandHandler;
 import com.muse.payments.shared.domain.ConflictException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
 import java.util.Set;
@@ -22,8 +21,12 @@ public class RegisterCommandHandler implements CommandHandler<RegisterCommand, U
         this.passwordEncoder = Objects.requireNonNull(passwordEncoder);
     }
 
+    /**
+     * Not one transaction on purpose. The duplicate check and the insert each run in the
+     * repository's own transaction, so no database connection is held while BCrypt runs.
+     * The unique index on the email decides a concurrent duplicate, as it did before.
+     */
     @Override
-    @Transactional
     public UserResponse handle(RegisterCommand command) {
         Objects.requireNonNull(command, "command cannot be null");
 
