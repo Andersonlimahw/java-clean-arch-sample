@@ -5,7 +5,7 @@ COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then echo "docker 
 help:
 	@echo "Available commands:"
 	@echo "  make up       - Start all services in background"
-	@echo "  make debug    - Start all services with app in debug mode (JDWP port 5005)"
+	@echo "  make debug    - Start all services with app in debug mode (JDWP port 5005) and follow logs"
 	@echo "  make down     - Stop and remove containers"
 	@echo "  make clean    - Stop and remove containers, volumes and orphans"
 	@echo "  make restart  - Restart all containers"
@@ -17,6 +17,7 @@ up:
 
 debug:
 	$(COMPOSE) -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.debug.yml logs -f app
 
 down:
 	$(COMPOSE) down
