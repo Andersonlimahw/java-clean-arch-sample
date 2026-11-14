@@ -55,9 +55,12 @@ class PaymentsApplicationIT extends TestcontainersBase {
 
     @Test
     @DisplayName("findPendingForPublishing returns only pending unpublished events")
+    @Transactional
     void findPendingForPublishingQueriesCorrectly() {
         UUID aggregateId = UUID.randomUUID();
         txTestService.doWithCommit(aggregateId);
+        // Flush inside the rollback-only test transaction so another relay cannot publish this fixture.
+        outboxJpaRepository.flush();
 
         var pending = outboxJpaRepository.findPendingForPublishing(java.time.Instant.now().plusSeconds(60), 10);
         assertThat(pending).isNotEmpty();

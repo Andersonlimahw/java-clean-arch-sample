@@ -1,7 +1,8 @@
 package com.muse.payments.notifications.web;
 
-import com.muse.payments.notifications.domain.Notification;
-import com.muse.payments.notifications.domain.NotificationRepository;
+import com.muse.payments.notifications.application.ListNotificationsQuery;
+import com.muse.payments.notifications.application.ListNotificationsQueryHandler;
+import com.muse.payments.notifications.application.NotificationResponse;
 import com.muse.payments.shared.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -21,16 +22,18 @@ import java.util.Objects;
 @SecurityRequirement(name = "BearerAuth")
 public class NotificationController {
 
-    private final NotificationRepository notificationRepository;
+    private final ListNotificationsQueryHandler listNotificationsHandler;
 
-    public NotificationController(NotificationRepository notificationRepository) {
-        this.notificationRepository = Objects.requireNonNull(notificationRepository);
+    public NotificationController(ListNotificationsQueryHandler listNotificationsHandler) {
+        this.listNotificationsHandler = Objects.requireNonNull(listNotificationsHandler);
     }
 
     @GetMapping
     @Operation(summary = "List current user notifications")
-    public ResponseEntity<List<Notification>> listUserNotifications(@Parameter(hidden = true) CurrentUser currentUser) {
-        List<Notification> notifications = notificationRepository.findByUserId(currentUser.userId());
+    public ResponseEntity<List<NotificationResponse>> listUserNotifications(@Parameter(hidden = true) CurrentUser currentUser) {
+        List<NotificationResponse> notifications = listNotificationsHandler.handle(
+                new ListNotificationsQuery(currentUser.userId())
+        );
         return ResponseEntity.ok(notifications);
     }
 }

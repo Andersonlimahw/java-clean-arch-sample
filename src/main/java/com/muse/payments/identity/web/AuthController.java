@@ -13,7 +13,7 @@ import com.muse.payments.identity.application.RegisterCommand;
 import com.muse.payments.identity.application.RegisterCommandHandler;
 import com.muse.payments.identity.application.RegisterRequest;
 import com.muse.payments.identity.application.UserResponse;
-import com.muse.payments.identity.infrastructure.AuthRateLimiter;
+import com.muse.payments.identity.application.AuthRateLimitPort;
 import com.muse.payments.shared.domain.RateLimitExceededException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,14 +39,14 @@ public class AuthController {
     private final LoginCommandHandler loginHandler;
     private final RefreshTokenCommandHandler refreshTokenHandler;
     private final LogoutCommandHandler logoutHandler;
-    private final AuthRateLimiter rateLimiter;
+    private final AuthRateLimitPort rateLimiter;
 
     public AuthController(
             RegisterCommandHandler registerHandler,
             LoginCommandHandler loginHandler,
             RefreshTokenCommandHandler refreshTokenHandler,
             LogoutCommandHandler logoutHandler,
-            AuthRateLimiter rateLimiter
+            AuthRateLimitPort rateLimiter
     ) {
         this.registerHandler = Objects.requireNonNull(registerHandler);
         this.loginHandler = Objects.requireNonNull(loginHandler);

@@ -1,5 +1,6 @@
 package com.muse.payments.identity.infrastructure;
 
+import com.muse.payments.identity.application.AuthRateLimitPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -12,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
-public class AuthRateLimiter {
+public class AuthRateLimiter implements AuthRateLimitPort {
 
     private static final Logger log = LoggerFactory.getLogger(AuthRateLimiter.class);
 
@@ -26,6 +27,7 @@ public class AuthRateLimiter {
         this.redisTemplate = redisTemplate;
     }
 
+    @Override
     public boolean tryAcquire(String clientIp) {
         String key = "ratelimit:auth:" + (clientIp != null ? clientIp : "anonymous");
 

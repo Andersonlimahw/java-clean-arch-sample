@@ -41,6 +41,18 @@ class ArchitectureTest {
             .as("Web adapters must not depend on Hibernate");
 
     @ArchTest
+    static final ArchRule web_should_depend_on_application_or_shared_only = noClasses()
+            .that().resideInAPackage("..web..")
+            .and().areNotAnnotatedWith("org.springframework.web.bind.annotation.RestControllerAdvice")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..infrastructure..",
+                    "com.muse.payments.identity.domain..",
+                    "com.muse.payments.payments.domain..",
+                    "com.muse.payments.notifications.domain.."
+            )
+            .as("Web adapters must depend on application ports/handlers, not domain or infrastructure details");
+
+    @ArchTest
     static final ArchRule application_should_not_depend_on_web_or_infra_entities = noClasses()
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAnyPackage(
