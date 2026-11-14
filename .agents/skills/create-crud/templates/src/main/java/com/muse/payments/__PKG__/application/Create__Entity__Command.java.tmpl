@@ -1,0 +1,12 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.shared.application.Command;
+
+import java.util.UUID;
+
+public record Create__Entity__Command(
+        UUID userId,
+        String name,
+        String description
+) implements Command<__Entity__Response> {
+}

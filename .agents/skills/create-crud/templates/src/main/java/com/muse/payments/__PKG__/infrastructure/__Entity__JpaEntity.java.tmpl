@@ -1,0 +1,98 @@
+package com.muse.payments.__PKG__.infrastructure;
+
+import com.muse.payments.__PKG__.domain.__Entity__;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
+
+@Entity
+@Table(name = "__TABLE__")
+public class __Entity__JpaEntity {
+
+    @Id
+    @Column(name = "id", nullable = false, updatable = false)
+    private UUID id;
+
+    @Column(name = "user_id", nullable = false, updatable = false)
+    private UUID userId;
+
+    @Column(name = "name", nullable = false, length = 120)
+    private String name;
+
+    @Column(name = "description", length = 255)
+    private String description;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
+
+    public __Entity__JpaEntity() {
+    }
+
+    public __Entity__JpaEntity(
+            UUID id,
+            UUID userId,
+            String name,
+            String description,
+            Instant createdAt,
+            Instant updatedAt,
+            Long version
+    ) {
+        this.id = id;
+        this.userId = userId;
+        this.name = name;
+        this.description = description;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+        this.version = version;
+    }
+
+    public static __Entity__JpaEntity fromDomain(__Entity__ __entity__) {
+        Objects.requireNonNull(__entity__, "__entity__ must not be null");
+        return new __Entity__JpaEntity(
+                __entity__.getId(),
+                __entity__.getUserId(),
+                __entity__.getName(),
+                __entity__.getDescription(),
+                __entity__.getCreatedAt(),
+                __entity__.getUpdatedAt(),
+                __entity__.getVersion()
+        );
+    }
+
+    public __Entity__ toDomain() {
+        return __Entity__.rehydrate(
+                this.id,
+                this.userId,
+                this.name,
+                this.description,
+                this.createdAt,
+                this.updatedAt,
+                this.version
+        );
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getUserId() {
+        return userId;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+}

@@ -1,0 +1,39 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__;
+import com.muse.payments.__PKG__.domain.__Entity__Repository;
+import com.muse.payments.shared.application.CommandHandler;
+import com.muse.payments.shared.application.OutboxPort;
+import com.muse.payments.shared.domain.EntityNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Objects;
+
+@Service
+public class Update__Entity__CommandHandler implements CommandHandler<Update__Entity__Command, __Entity__Response> {
+
+    private final __Entity__Repository __entity__Repository;
+    private final OutboxPort outboxPort;
+
+    public Update__Entity__CommandHandler(__Entity__Repository __entity__Repository, OutboxPort outboxPort) {
+        this.__entity__Repository = Objects.requireNonNull(__entity__Repository);
+        this.outboxPort = Objects.requireNonNull(outboxPort);
+    }
+
+    @Override
+    @Transactional
+    public __Entity__Response handle(Update__Entity__Command command) {
+        Objects.requireNonNull(command, "command must not be null");
+
+        // Another user's __LABEL__ is reported as missing so callers cannot probe for ids.
+        __Entity__ __entity__ = __entity__Repository.findById(command.__entity__Id())
+                .filter(found -> found.isOwnedBy(command.userId()))
+                .orElseThrow(() -> new EntityNotFoundException("__Label__ not found with id: " + command.__entity__Id()));
+
+        __entity__.update(command.name(), command.description(), command.expectedVersion());
+        __Entity__ saved = __entity__Repository.save(__entity__);
+        __Entity__OutboxMapper.appendAll(outboxPort, __entity__.pullDomainEvents());
+        return __Entity__Response.from(saved);
+    }
+}

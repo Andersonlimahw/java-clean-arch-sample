@@ -5,6 +5,8 @@ A production-grade **Payments Modular Monolith** built with **Java 25**, **Sprin
 Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **CQRS**, and the **Transactional Outbox Pattern** to provide reliable, highly concurrent payment execution and event-driven notifications.
 
 ## Demo
+AI-assisted development: see [the universal skills and reviewer workflow](docs/ai-tooling.md), including `create-crud <resource>`, tests, local gate, Postman and Flyway. Canonical sources live in `.agents/`; harness entries point to them.
+
 
 [![End-to-end demo of the payments platform](docs/demo/e2e-demo-thumbnail.jpg)](docs/demo/e2e-demo.mp4)
 

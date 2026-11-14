@@ -1,0 +1,136 @@
+package com.muse.payments.__PKG__.domain;
+
+import com.muse.payments.shared.domain.AggregateRoot;
+import com.muse.payments.shared.domain.ConflictException;
+import com.muse.payments.shared.domain.ValidationException;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Objects;
+import java.util.UUID;
+
+public class __Entity__ extends AggregateRoot<UUID> {
+
+    public static final int NAME_MAX_LENGTH = 120;
+    public static final int DESCRIPTION_MAX_LENGTH = 255;
+
+    private final UUID id;
+    private final UUID userId;
+    private String name;
+    private String description;
+    private final Instant createdAt;
+    private Instant updatedAt;
+    private final Long version;
+
+    private __Entity__(
+            UUID id,
+            UUID userId,
+            String name,
+            String description,
+            Instant createdAt,
+            Instant updatedAt,
+            Long version
+    ) {
+        this.id = Objects.requireNonNull(id, "__Entity__ id must not be null");
+        this.userId = Objects.requireNonNull(userId, "userId must not be null");
+        this.name = Objects.requireNonNull(name, "name must not be null");
+        this.description = description;
+        this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+        this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
+        this.version = version;
+    }
+
+    public static __Entity__ create(UUID userId, String name, String description) {
+        Instant now = now();
+        __Entity__ __entity__ = new __Entity__(
+                UUID.randomUUID(), userId, validName(name), validDescription(description), now, now, null);
+        __entity__.registerEvent(new __Entity__CreatedEvent(__entity__.id, __entity__.userId, __entity__.name));
+        return __entity__;
+    }
+
+    public static __Entity__ rehydrate(
+            UUID id,
+            UUID userId,
+            String name,
+            String description,
+            Instant createdAt,
+            Instant updatedAt,
+            Long version
+    ) {
+        return new __Entity__(id, userId, name, description, createdAt, updatedAt, version);
+    }
+
+    /**
+     * Applies an update the caller read at {@code expectedVersion}. A different stored version
+     * means another request changed the __LABEL__ first.
+     */
+    public void update(String name, String description, Long expectedVersion) {
+        if (expectedVersion == null || !expectedVersion.equals(this.version)) {
+            throw new ConflictException("__Label__ was modified by another request; reload and retry");
+        }
+        this.name = validName(name);
+        this.description = validDescription(description);
+        this.updatedAt = now();
+        registerEvent(new __Entity__UpdatedEvent(this.id, this.userId, this.name));
+    }
+
+    public void markDeleted() {
+        registerEvent(new __Entity__DeletedEvent(this.id, this.userId));
+    }
+
+    public boolean isOwnedBy(UUID requestingUserId) {
+        return this.userId.equals(requestingUserId);
+    }
+
+    private static String validName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new ValidationException("name must not be blank");
+        }
+        String trimmed = name.trim();
+        if (trimmed.length() > NAME_MAX_LENGTH) {
+            throw new ValidationException("name must not exceed " + NAME_MAX_LENGTH + " characters");
+        }
+        return trimmed;
+    }
+
+    private static String validDescription(String description) {
+        if (description != null && description.length() > DESCRIPTION_MAX_LENGTH) {
+            throw new ValidationException("description must not exceed " + DESCRIPTION_MAX_LENGTH + " characters");
+        }
+        return description;
+    }
+
+    /** PostgreSQL keeps microseconds. Truncating here keeps the create response equal to later reads. */
+    private static Instant now() {
+        return Instant.now().truncatedTo(ChronoUnit.MICROS);
+    }
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getUserId() {
+        return userId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+}

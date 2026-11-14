@@ -8,6 +8,8 @@ related: [architecture.md, testing.md, rules/refactor-and-validation.md, llms.tx
 # Documentation index
 
 Start here for project guidance:
+- [AI tooling](ai-tooling.md): universal skills, scaffold, local validation and architecture reviewer.
+- [AI tooling evidence](test-plans/ai-tooling-validation.md): disposable CRUD generation, 178 tests and local infrastructure checks.
 
 | Document | Contents |
 |---|---|

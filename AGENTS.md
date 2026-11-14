@@ -17,6 +17,7 @@ This repository is a production-grade Payments Platform built with Java 25, Spri
 - Before PR creation or merging, execute: `mvn -B clean verify` (with Docker running for Testcontainers).
 
 ## Documentation index
+- [AI tooling](docs/ai-tooling.md) — canonical `.agents/skills/`, Claude aliases, Gemini command pointers and read-only reviewer. Entries: `create-crud <resource>`, `test-resource <resource>`, `local-gate`, `run-api-requests`, `flyway-migration <change>`, `add-integration-event <module> <event>`, `docs-sync <feature>`.
 - [Postman workflow](docs/postman.md) — maintain request examples and status/payload assertions with every API contract change; keep workflow state in collection variables.
 - [Documentation index](docs/README.md) — human entry point for architecture, API, data, resilience, testing, operations, ADRs, and rules.
 - [LLM wiki index](docs/llms.txt) — flat machine-readable inventory regenerated after documentation changes.

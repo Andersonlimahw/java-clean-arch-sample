@@ -1,0 +1,14 @@
+package com.muse.payments.__PKG__.infrastructure;
+
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+import java.util.UUID;
+
+public interface __Entity__JpaRepository extends JpaRepository<__Entity__JpaEntity, UUID> {
+
+    List<__Entity__JpaEntity> findByUserId(UUID userId, Pageable pageable);
+
+    long countByUserId(UUID userId);
+}

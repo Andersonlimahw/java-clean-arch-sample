@@ -1,0 +1,30 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__Repository;
+import com.muse.payments.shared.application.QueryHandler;
+import com.muse.payments.shared.domain.EntityNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Objects;
+
+@Service
+public class Get__Entity__ByIdQueryHandler implements QueryHandler<Get__Entity__ByIdQuery, __Entity__Response> {
+
+    private final __Entity__Repository __entity__Repository;
+
+    public Get__Entity__ByIdQueryHandler(__Entity__Repository __entity__Repository) {
+        this.__entity__Repository = Objects.requireNonNull(__entity__Repository);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public __Entity__Response handle(Get__Entity__ByIdQuery query) {
+        Objects.requireNonNull(query, "query must not be null");
+
+        return __entity__Repository.findById(query.__entity__Id())
+                .filter(found -> found.isOwnedBy(query.userId()))
+                .map(__Entity__Response::from)
+                .orElseThrow(() -> new EntityNotFoundException("__Label__ not found with id: " + query.__entity__Id()));
+    }
+}

@@ -1,0 +1,207 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__;
+import com.muse.payments.__PKG__.domain.__Entity__Repository;
+import com.muse.payments.__PKG__.domain.__Entity__Sort;
+import com.muse.payments.shared.application.IntegrationEvent;
+import com.muse.payments.shared.application.OutboxPort;
+import com.muse.payments.shared.domain.ConflictException;
+import com.muse.payments.shared.domain.EntityNotFoundException;
+import com.muse.payments.shared.domain.ValidationException;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class __Entity__HandlersTest {
+
+    private static final UUID OWNER = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID OTHER = UUID.fromString("22222222-2222-2222-2222-222222222222");
+
+    private final InMemoryRepository repository = new InMemoryRepository();
+    private final RecordingOutbox outbox = new RecordingOutbox();
+    private final Create__Entity__CommandHandler createHandler = new Create__Entity__CommandHandler(repository, outbox);
+    private final Update__Entity__CommandHandler updateHandler = new Update__Entity__CommandHandler(repository, outbox);
+    private final Delete__Entity__CommandHandler deleteHandler = new Delete__Entity__CommandHandler(repository, outbox);
+    private final Get__Entity__ByIdQueryHandler getHandler = new Get__Entity__ByIdQueryHandler(repository);
+    private final List__Entities__QueryHandler listHandler = new List__Entities__QueryHandler(repository);
+
+    @Test
+    @DisplayName("create stores the __LABEL__ and appends one __Entity__Created outbox event")
+    void create_shouldStoreAndAppendOutboxEvent() {
+        __Entity__Response created = createHandler.handle(new Create__Entity__Command(OWNER, "First", "Desc"));
+
+        assertThat(created.id()).isNotNull();
+        assertThat(created.userId()).isEqualTo(OWNER);
+        assertThat(created.version()).isZero();
+        assertThat(outbox.events).hasSize(1);
+        IntegrationEvent event = outbox.events.getFirst();
+        assertThat(event.aggregateType()).isEqualTo("__Entity__");
+        assertThat(event.eventType()).isEqualTo("__Entity__Created");
+        assertThat(event.aggregateId()).isEqualTo(created.id());
+    }
+
+    @Test
+    @DisplayName("create with an invalid name stores nothing and appends no event")
+    void create_withInvalidName_shouldNotStore() {
+        assertThatThrownBy(() -> createHandler.handle(new Create__Entity__Command(OWNER, " ", null)))
+                .isInstanceOf(ValidationException.class);
+
+        assertThat(repository.rows).isEmpty();
+        assertThat(outbox.events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("update by the owner bumps the version and appends __Entity__Updated")
+    void update_byOwner_shouldApplyAndAppendEvent() {
+        __Entity__Response created = createHandler.handle(new Create__Entity__Command(OWNER, "First", null));
+        outbox.events.clear();
+
+        __Entity__Response updated = updateHandler.handle(
+                new Update__Entity__Command(created.id(), OWNER, "Second", "Now described", created.version()));
+
+        assertThat(updated.name()).isEqualTo("Second");
+        assertThat(updated.version()).isEqualTo(1L);
+        assertThat(outbox.events).extracting(IntegrationEvent::eventType).containsExactly("__Entity__Updated");
+    }
+
+    @Test
+    @DisplayName("update with a stale version is a conflict; another user's __LABEL__ is not found")
+    void update_staleVersionOrOtherOwner_shouldFail() {
+        __Entity__Response created = createHandler.handle(new Create__Entity__Command(OWNER, "First", null));
+        outbox.events.clear();
+
+        assertThatThrownBy(() -> updateHandler.handle(
+                new Update__Entity__Command(created.id(), OWNER, "Second", null, 7L)))
+                .isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> updateHandler.handle(
+                new Update__Entity__Command(created.id(), OTHER, "Second", null, created.version())))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        assertThat(getHandler.handle(new Get__Entity__ByIdQuery(created.id(), OWNER)).name()).isEqualTo("First");
+        assertThat(outbox.events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("delete by the owner removes the row and appends __Entity__Deleted; other users get not found")
+    void delete_shouldRemoveAndAppendEvent() {
+        __Entity__Response created = createHandler.handle(new Create__Entity__Command(OWNER, "First", null));
+        outbox.events.clear();
+
+        assertThatThrownBy(() -> deleteHandler.handle(new Delete__Entity__Command(created.id(), OTHER)))
+                .isInstanceOf(EntityNotFoundException.class);
+        assertThat(repository.rows).hasSize(1);
+
+        deleteHandler.handle(new Delete__Entity__Command(created.id(), OWNER));
+
+        assertThat(repository.rows).isEmpty();
+        assertThat(outbox.events).extracting(IntegrationEvent::eventType).containsExactly("__Entity__Deleted");
+        assertThatThrownBy(() -> getHandler.handle(new Get__Entity__ByIdQuery(created.id(), OWNER)))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("get and list are owner-scoped")
+    void readsAreOwnerScoped() {
+        __Entity__Response mine = createHandler.handle(new Create__Entity__Command(OWNER, "Mine", null));
+        createHandler.handle(new Create__Entity__Command(OTHER, "Theirs", null));
+
+        assertThatThrownBy(() -> getHandler.handle(new Get__Entity__ByIdQuery(mine.id(), OTHER)))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        PageResponse<__Entity__Response> page = listHandler.handle(new List__Entities__Query(OWNER, 0, 20, null));
+        assertThat(page.items()).extracting(__Entity__Response::id).containsExactly(mine.id());
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(page.sort()).isEqualTo("createdAt,desc");
+    }
+
+    @Test
+    @DisplayName("list rejects page, size, offset, and sort outside the documented bounds")
+    void list_shouldValidatePaging() {
+        assertThatThrownBy(() -> listHandler.handle(new List__Entities__Query(OWNER, -1, 20, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("page must be greater than or equal to 0");
+        assertThatThrownBy(() -> listHandler.handle(new List__Entities__Query(OWNER, 0, 0, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("size must be between 1 and 100");
+        assertThatThrownBy(() -> listHandler.handle(new List__Entities__Query(OWNER, 0, 101, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("size must be between 1 and 100");
+        assertThatThrownBy(() -> listHandler.handle(new List__Entities__Query(OWNER, 101, 100, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("page is too large; page * size must be <= 10000");
+        assertThatThrownBy(() -> listHandler.handle(new List__Entities__Query(OWNER, 0, 20, "name,asc")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("sort must be one of: createdAt,desc, createdAt,asc");
+    }
+
+    /** Mimics the JPA adapter: a save assigns version 0 and each later save increments it. */
+    private static final class InMemoryRepository implements __Entity__Repository {
+
+        private final Map<UUID, __Entity__> rows = new LinkedHashMap<>();
+
+        @Override
+        public __Entity__ save(__Entity__ __entity__) {
+            Long nextVersion = __entity__.getVersion() == null ? 0L : __entity__.getVersion() + 1;
+            __Entity__ stored = __Entity__.rehydrate(
+                    __entity__.getId(),
+                    __entity__.getUserId(),
+                    __entity__.getName(),
+                    __entity__.getDescription(),
+                    __entity__.getCreatedAt(),
+                    __entity__.getUpdatedAt(),
+                    nextVersion
+            );
+            rows.put(stored.getId(), stored);
+            return stored;
+        }
+
+        @Override
+        public Optional<__Entity__> findById(UUID id) {
+            return Optional.ofNullable(rows.get(id));
+        }
+
+        @Override
+        public List<__Entity__> findByUserId(UUID userId, int page, int size, __Entity__Sort sort) {
+            Comparator<__Entity__> order = Comparator.comparing(__Entity__::getCreatedAt);
+            if (sort == __Entity__Sort.CREATED_AT_DESC) {
+                order = order.reversed();
+            }
+            return rows.values().stream()
+                    .filter(row -> row.isOwnedBy(userId))
+                    .sorted(order)
+                    .skip((long) page * size)
+                    .limit(size)
+                    .toList();
+        }
+
+        @Override
+        public long countByUserId(UUID userId) {
+            return rows.values().stream().filter(row -> row.isOwnedBy(userId)).count();
+        }
+
+        @Override
+        public void delete(__Entity__ __entity__) {
+            rows.remove(__entity__.getId());
+        }
+    }
+
+    private static final class RecordingOutbox implements OutboxPort {
+
+        private final List<IntegrationEvent> events = new ArrayList<>();
+
+        @Override
+        public void append(IntegrationEvent event) {
+            events.add(event);
+        }
+    }
+}

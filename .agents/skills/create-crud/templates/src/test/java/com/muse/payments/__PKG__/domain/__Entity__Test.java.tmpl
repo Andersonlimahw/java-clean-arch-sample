@@ -1,0 +1,103 @@
+package com.muse.payments.__PKG__.domain;
+
+import com.muse.payments.shared.domain.ConflictException;
+import com.muse.payments.shared.domain.ValidationException;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class __Entity__Test {
+
+    private static final UUID OWNER = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+    @Test
+    @DisplayName("create trims the name, leaves version unset, and records __Entity__CreatedEvent")
+    void create_shouldInitializeAndRecordEvent() {
+        __Entity__ __entity__ = __Entity__.create(OWNER, "  First  ", "A description");
+
+        assertThat(__entity__.getId()).isNotNull();
+        assertThat(__entity__.getUserId()).isEqualTo(OWNER);
+        assertThat(__entity__.getName()).isEqualTo("First");
+        assertThat(__entity__.getDescription()).isEqualTo("A description");
+        assertThat(__entity__.getVersion()).isNull();
+        assertThat(__entity__.getCreatedAt()).isEqualTo(__entity__.getUpdatedAt());
+
+        var events = __entity__.pullDomainEvents();
+        assertThat(events).hasSize(1);
+        var event = (__Entity__CreatedEvent) events.getFirst();
+        assertThat(event.__entity__Id()).isEqualTo(__entity__.getId());
+        assertThat(event.userId()).isEqualTo(OWNER);
+        assertThat(event.name()).isEqualTo("First");
+    }
+
+    @Test
+    @DisplayName("create rejects a blank name, an over-long name, and an over-long description")
+    void create_shouldValidateFields() {
+        assertThatThrownBy(() -> __Entity__.create(OWNER, "   ", null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("name must not be blank");
+        assertThatThrownBy(() -> __Entity__.create(OWNER, null, null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("name must not be blank");
+        assertThatThrownBy(() -> __Entity__.create(OWNER, "x".repeat(__Entity__.NAME_MAX_LENGTH + 1), null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("name must not exceed 120 characters");
+        assertThatThrownBy(() -> __Entity__.create(OWNER, "ok", "x".repeat(__Entity__.DESCRIPTION_MAX_LENGTH + 1)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("description must not exceed 255 characters");
+    }
+
+    @Test
+    @DisplayName("update with the stored version changes the fields and records __Entity__UpdatedEvent")
+    void update_withCurrentVersion_shouldApplyAndRecordEvent() {
+        __Entity__ __entity__ = stored(3L);
+
+        __entity__.update("Renamed", null, 3L);
+
+        assertThat(__entity__.getName()).isEqualTo("Renamed");
+        assertThat(__entity__.getDescription()).isNull();
+        assertThat(__entity__.getUpdatedAt()).isAfter(__entity__.getCreatedAt());
+        var events = __entity__.pullDomainEvents();
+        assertThat(events).hasSize(1);
+        assertThat(((__Entity__UpdatedEvent) events.getFirst()).name()).isEqualTo("Renamed");
+    }
+
+    @Test
+    @DisplayName("update with a stale or missing version is a conflict and changes nothing")
+    void update_withStaleVersion_shouldThrowConflict() {
+        __Entity__ __entity__ = stored(3L);
+
+        assertThatThrownBy(() -> __entity__.update("Renamed", null, 2L))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("modified by another request");
+        assertThatThrownBy(() -> __entity__.update("Renamed", null, null))
+                .isInstanceOf(ConflictException.class);
+
+        assertThat(__entity__.getName()).isEqualTo("Stored");
+        assertThat(__entity__.pullDomainEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("markDeleted records __Entity__DeletedEvent and isOwnedBy matches only the owner")
+    void markDeleted_andOwnership() {
+        __Entity__ __entity__ = stored(0L);
+
+        __entity__.markDeleted();
+
+        var events = __entity__.pullDomainEvents();
+        assertThat(events).hasSize(1);
+        assertThat(((__Entity__DeletedEvent) events.getFirst()).__entity__Id()).isEqualTo(__entity__.getId());
+        assertThat(__entity__.isOwnedBy(OWNER)).isTrue();
+        assertThat(__entity__.isOwnedBy(UUID.randomUUID())).isFalse();
+    }
+
+    private static __Entity__ stored(Long version) {
+        Instant created = Instant.parse("2026-01-01T00:00:00Z");
+        return __Entity__.rehydrate(UUID.randomUUID(), OWNER, "Stored", "Before", created, created, version);
+    }
+}

@@ -1,0 +1,18 @@
+package com.muse.payments.__PKG__.domain;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface __Entity__Repository {
+
+    __Entity__ save(__Entity__ __entity__);
+
+    Optional<__Entity__> findById(UUID id);
+
+    List<__Entity__> findByUserId(UUID userId, int page, int size, __Entity__Sort sort);
+
+    long countByUserId(UUID userId);
+
+    void delete(__Entity__ __entity__);
+}

@@ -1,0 +1,6 @@
+description = "docs-sync: follow the canonical repository skill"
+prompt = """
+Read AGENTS.md, then .agents/skills/docs-sync/SKILL.md and follow that workflow.
+Arguments: {{args}}
+Respect the repository scope and authorization rules. Report actual validation evidence.
+"""
