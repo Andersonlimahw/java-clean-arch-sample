@@ -1,3 +1,10 @@
+---
+title: Architecture
+status: active
+updated: 2026-11-13
+related: [api.md, data.md, messaging.md, adr/0014-web-boundary-and-strict-local-gate.md]
+---
+
 # Architecture — Payments Platform
 
 One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 25.
@@ -119,8 +126,8 @@ Commands change state and may append integration events in the same transaction.
 | shared | `com.muse.payments.shared` | `outbox_events`, `processed_events`, `idempotency_keys` | Depended on by identity, payments, and notifications. Not a business module. |
 
 `identity` and `payments` use `domain`, `application`, `infrastructure`, and `web`.
-`notifications` has `domain`, `infrastructure`, and `web`, and no `application` package.
-`NotificationController` calls `NotificationRepository` and returns the domain type `Notification`.
+`notifications` has `domain`, `application`, `infrastructure`, and `web`.
+`ListNotificationsQueryHandler` owns the read use case and maps domain notifications to an application response record; `NotificationController` depends only on that handler.
 `domain` is plain Java: `ArchitectureTest` allows only the JDK and other `domain` packages.
 Payment and identity commands, and the payment queries, go through application handlers. Identity has no query types.
 Infrastructure holds JPA, Redis, and RabbitMQ adapters.
@@ -342,3 +349,11 @@ erDiagram
 ```
 
 Flyway migrations are append-only from V1 through V7. See [data.md](data.md) for each migration, all indexes, the V6 concurrent index build, and a query/index discrepancy found in the current source.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=ArchitectureTest,ModularityTest test
+```
+
+Expected result: ArchUnit and Spring Modulith boundary checks pass.

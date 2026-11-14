@@ -1,3 +1,10 @@
+---
+title: Messaging
+status: active
+updated: 2026-11-13
+related: [architecture.md, resilience.md, observability.md]
+---
+
 # Messaging guarantees
 
 Payments publishes integration events through the transactional outbox. The relay and the notifications consumer together provide **at-least-once delivery with idempotent side effects**. This is not exactly-once delivery.
@@ -40,3 +47,11 @@ Headers propagated from the outbox: `X-Correlation-Id`, `X-Event-Id`, `X-Event-T
 ## What this does not promise
 
 A message can be delivered more than once. Side effects are safe because of the processed-event primary key. Messages on the DLQ stay there until an operator inspects them; there is no automatic replay. An unpublished outbox row is retried indefinitely with the delay capped at 300 seconds.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=OutboxRelayConfirmTest,MessagingNotificationsIT test
+```
+
+Expected result: outbox publication, retry, deduplication, and notification delivery preserve at-least-once semantics.

@@ -1,3 +1,10 @@
+---
+title: API Test Loop
+status: active
+updated: 2026-11-13
+related: [findings.md, ../../testing.md, ../../api.md]
+---
+
 # API auth-context contract checks
 
 ## Scenarios

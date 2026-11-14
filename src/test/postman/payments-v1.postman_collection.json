@@ -1,396 +1,1100 @@
 {
   "info": {
-    "name": "Payments Platform v1",
-    "description": "Ordered HTTP smoke for /api/v1. Register generates a unique email on each run. Status tests fail the request when the code does not match. Notification delivery is eventual; this collection asserts the list status only. scripts/validate-api.sh also waits until the payment id is present.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "name": "Payments Platform v1 · Fluxo completo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Execute as pastas 01–05 e 07 em ordem. Cadastro → login → refresh → criar/replay/consultar/listar/confirmar/cancelar → notificações → erros → logout. Pasta 06 opcional exige reviewer separado. Variáveis na collection; nenhum environment necessário. No Runner ative Keep variable values para preservar valores após o run. Não exporte tokens/senha reais. Veja docs/postman.md."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
   },
   "variable": [
-    {"key": "baseUrl", "value": "http://127.0.0.1:8080"},
-    {"key": "email", "value": ""},
-    {"key": "password", "value": "Password123!"},
-    {"key": "accessToken", "value": ""},
-    {"key": "paymentId", "value": ""}
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080",
+      "type": "string"
+    },
+    {
+      "key": "newUserOnRun",
+      "value": "true",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "displayName",
+      "value": "Postman User",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tokenExpiresAt",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "amount",
+      "value": "15.50",
+      "type": "string"
+    },
+    {
+      "key": "currency",
+      "value": "BRL",
+      "type": "string"
+    },
+    {
+      "key": "paymentDescription",
+      "value": "Exemplo Postman",
+      "type": "string"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cancelPaymentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationPoll",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "runFraudReview",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "reviewerAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "heldPaymentIdApprove",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "heldPaymentIdReject",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
-      "name": "Readiness",
-      "event": [
+      "name": "01 · Disponibilidade",
+      "item": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});"
-            ]
-          }
+          "name": "01 · Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health/readiness",
+            "description": "01 · Readiness",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Aplicação pronta\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
         }
-      ],
-      "request": {
-        "method": "GET",
-        "url": "{{baseUrl}}/actuator/health/readiness"
-      }
+      ]
     },
     {
-      "name": "Register",
+      "name": "02 · Conta e autenticação",
+      "item": [
+        {
+          "name": "01 · Cadastrar usuário e preservar credenciais",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/register",
+            "description": "Gera email único a cada execução por padrão; senha de exemplo gerada somente quando vazia. Guarda o id real em userId. Para usuário já existente, execute Login diretamente.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"{{displayName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get(\"newUserOnRun\") === \"true\" || !pm.collectionVariables.get(\"email\")) { pm.collectionVariables.set(\"email\", \"postman-\" + pm.variables.replaceIn(\"{{$guid}}\") + \"@example.com\"); }",
+                  "if (!pm.collectionVariables.get(\"password\")) pm.collectionVariables.set(\"password\", \"Pm-\" + pm.variables.replaceIn(\"{{$guid}}\") + \"!aA1\");",
+                  "[\"userId\",\"accessToken\",\"refreshToken\",\"tokenExpiresAt\",\"paymentId\",\"cancelPaymentId\",\"idempotencyKey\",\"notificationId\"].forEach(k => pm.collectionVariables.set(k, \"\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"email\",\"displayName\",\"roles\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"email\":{\"type\":\"string\",\"minLength\":1},\"displayName\":{\"type\":\"string\",\"minLength\":1},\"roles\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1}}}}));",
+                  "pm.test(\"Email e nome preservados\", () => { const b = pm.response.json(); pm.expect(b.email).to.eql(pm.collectionVariables.get(\"email\")); pm.expect(b.displayName).to.eql(pm.collectionVariables.get(\"displayName\")); pm.expect(b.roles).to.include(\"USER\"); });",
+                  "if (pm.response.code === 201 && typeof pm.response.json().id === \"string\") pm.collectionVariables.set(\"userId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 · Login e salvar tokens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "02 · Login e salvar tokens",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"accessToken\",\"refreshToken\",\"tokenType\",\"expiresIn\"],\"properties\":{\"accessToken\":{\"type\":\"string\",\"minLength\":1},\"refreshToken\":{\"type\":\"string\",\"minLength\":1},\"tokenType\":{\"enum\":[\"Bearer\"]},\"expiresIn\":{\"type\":\"integer\",\"minimum\":1}}}));",
+                  "if (pm.response.code === 200) { const b = pm.response.json(); if (typeof b.accessToken === \"string\" && b.accessToken && typeof b.refreshToken === \"string\" && b.refreshToken) { pm.collectionVariables.set(\"accessToken\", b.accessToken); pm.collectionVariables.set(\"refreshToken\", b.refreshToken); pm.collectionVariables.set(\"tokenExpiresAt\", String(Date.now() + b.expiresIn * 1000)); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 · Rotacionar refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "description": "03 · Rotacionar refresh token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"previousRefreshToken\", pm.collectionVariables.get(\"refreshToken\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"accessToken\",\"refreshToken\",\"tokenType\",\"expiresIn\"],\"properties\":{\"accessToken\":{\"type\":\"string\",\"minLength\":1},\"refreshToken\":{\"type\":\"string\",\"minLength\":1},\"tokenType\":{\"enum\":[\"Bearer\"]},\"expiresIn\":{\"type\":\"integer\",\"minimum\":1}}}));",
+                  "pm.test(\"Refresh token rotacionado\", () => pm.expect(pm.response.json().refreshToken).not.to.eql(pm.variables.get(\"previousRefreshToken\")));",
+                  "if (pm.response.code === 200) { const b = pm.response.json(); if (typeof b.accessToken === \"string\" && b.accessToken && typeof b.refreshToken === \"string\" && b.refreshToken) { pm.collectionVariables.set(\"accessToken\", b.accessToken); pm.collectionVariables.set(\"refreshToken\", b.refreshToken); pm.collectionVariables.set(\"tokenExpiresAt\", String(Date.now() + b.expiresIn * 1000)); } }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 · Pagamentos",
+      "item": [
+        {
+          "name": "01 · Criar pagamento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments",
+            "description": "Requer fraude local respondendo CLEAR. Gera e preserva Idempotency-Key para replay.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"{{amount}}\",\n  \"currency\": \"{{currency}}\",\n  \"description\": \"{{paymentDescription}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"idempotencyKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Pagamento pertence ao usuário\", () => pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"userId\")));",
+                  "pm.test(\"Screening CLEAR e valor correto\", () => { const b = pm.response.json(); pm.expect(b.status).to.eql(\"PENDING\"); pm.expect(b.amount).to.eql(Number(pm.collectionVariables.get(\"amount\"))); pm.expect(b.currency).to.eql(pm.collectionVariables.get(\"currency\")); });",
+                  "if (pm.response.code === 201 && typeof pm.response.json().id === \"string\") pm.collectionVariables.set(\"paymentId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 · Repetir criação com mesma chave",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments",
+            "description": "02 · Repetir criação com mesma chave",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"{{amount}}\",\n  \"currency\": \"{{currency}}\",\n  \"description\": \"{{paymentDescription}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Replay não duplica pagamento\", () => { pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"paymentId\")); pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 · Consultar pagamento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}",
+            "description": "03 · Consultar pagamento"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Pagamento pertence ao usuário\", () => pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"userId\")));",
+                  "pm.test(\"ID preservado\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"paymentId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 · Listar pagamentos — descendente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments?page=0&size=20&sort=createdAt,desc",
+            "description": "04 · Listar pagamentos — descendente"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"items\",\"page\",\"size\",\"totalElements\",\"totalPages\",\"sort\"],\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}},\"page\":{\"type\":\"integer\"},\"size\":{\"type\":\"integer\"},\"totalElements\":{\"type\":\"integer\"},\"totalPages\":{\"type\":\"integer\"},\"sort\":{\"type\":\"string\",\"minLength\":1}}}));",
+                  "pm.test(\"Página e usuário\", () => { const b = pm.response.json(); pm.expect(b.page).to.eql(0); pm.expect(b.size).to.eql(20); pm.expect(b.sort).to.eql(\"createdAt,desc\"); pm.expect(b.items.map(p => p.id)).to.include(pm.collectionVariables.get(\"paymentId\")); b.items.forEach(p => pm.expect(p.userId).to.eql(pm.collectionVariables.get(\"userId\"))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 · Paginar — ascendente, segunda página",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments?page=1&size=1&sort=createdAt,asc",
+            "description": "05 · Paginar — ascendente, segunda página"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"items\",\"page\",\"size\",\"totalElements\",\"totalPages\",\"sort\"],\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}},\"page\":{\"type\":\"integer\"},\"size\":{\"type\":\"integer\"},\"totalElements\":{\"type\":\"integer\"},\"totalPages\":{\"type\":\"integer\"},\"sort\":{\"type\":\"string\",\"minLength\":1}}}));",
+                  "pm.test(\"Metadados de paginação\", () => { const b = pm.response.json(); pm.expect(b.page).to.eql(1); pm.expect(b.size).to.eql(1); pm.expect(b.sort).to.eql(\"createdAt,asc\"); pm.expect(b.items.length).to.be.at.most(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 · Confirmar pagamento",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/confirm",
+            "description": "06 · Confirmar pagamento"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Pagamento pertence ao usuário\", () => pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"userId\")));",
+                  "pm.test(\"Estado COMPLETED\", () => pm.expect(pm.response.json().status).to.eql(\"COMPLETED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 · Criar outro pagamento para cancelamento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments",
+            "description": "07 · Criar outro pagamento para cancelamento",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"{{amount}}\",\n  \"currency\": \"{{currency}}\",\n  \"description\": \"{{paymentDescription}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Pagamento pertence ao usuário\", () => pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"userId\")));",
+                  "if (pm.response.code === 201 && typeof pm.response.json().id === \"string\") pm.collectionVariables.set(\"cancelPaymentId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 · Cancelar segundo pagamento",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{cancelPaymentId}}/cancel",
+            "description": "08 · Cancelar segundo pagamento"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Pagamento pertence ao usuário\", () => pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"userId\")));",
+                  "pm.test(\"Estado CANCELLED\", () => pm.expect(pm.response.json().status).to.eql(\"CANCELLED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 · Notificações",
+      "item": [
+        {
+          "name": "01 · Listar e aguardar evento do pagamento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/notifications",
+            "description": "No Runner/Newman repete até 10 vezes com pausa de 1s. Send isolado faz apenas uma tentativa. Requer outbox e RabbitMQ ativos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"userId\",\"paymentId\",\"type\",\"title\",\"message\",\"createdAt\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"paymentId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"type\":{\"type\":\"string\",\"minLength\":1},\"title\":{\"type\":\"string\",\"minLength\":1},\"message\":{\"type\":\"string\",\"minLength\":1},\"createdAt\":{\"type\":\"string\",\"minLength\":1}}}}));",
+                  "const rows = pm.response.json();",
+                  "pm.test(\"Notificações do usuário autenticado\", () => rows.forEach(n => pm.expect(n.userId).to.eql(pm.collectionVariables.get(\"userId\"))));",
+                  "const found = rows.find(n => n.paymentId === pm.collectionVariables.get(\"paymentId\"));",
+                  "const attempt = Number(pm.collectionVariables.get(\"notificationPoll\") || 0);",
+                  "if (!found && attempt < 10 && pm.response.code === 200) {",
+                  "  pm.collectionVariables.set(\"notificationPoll\", String(attempt + 1));",
+                  "  setTimeout(() => pm.execution.setNextRequest(pm.info.requestName), 1000);",
+                  "} else {",
+                  "  pm.test(\"Evento do pagamento entregue\", () => pm.expect(found, \"Execute a pasta no Runner para polling de até 10 tentativas\").to.exist);",
+                  "  if (found) pm.collectionVariables.set(\"notificationId\", found.id);",
+                  "  pm.collectionVariables.set(\"notificationPoll\", \"0\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 · Erros esperados",
+      "item": [
+        {
+          "name": "01 · Sem bearer token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments",
+            "description": "01 · Sem bearer token",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(401); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 · Sem Idempotency-Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments",
+            "description": "02 · Sem Idempotency-Key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"{{amount}}\",\n  \"currency\": \"{{currency}}\",\n  \"description\": \"{{paymentDescription}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(400); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 · Valor inválido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments",
+            "description": "03 · Valor inválido",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 0,\n  \"currency\": \"{{currency}}\",\n  \"description\": \"{{paymentDescription}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(400); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 · Pagamento inexistente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/00000000-0000-0000-0000-000000000000",
+            "description": "04 · Pagamento inexistente"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(404); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 · ID inválido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/not-a-uuid",
+            "description": "05 · ID inválido"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(400); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 · Tamanho acima do limite",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments?size=101",
+            "description": "06 · Tamanho acima do limite"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(400); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 · Offset acima do limite",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments?page=101&size=100",
+            "description": "07 · Offset acima do limite"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(400); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 · Ordenação inválida",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments?sort=amount,desc",
+            "description": "08 · Ordenação inválida"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(400); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 · USER não lista revisão de fraude",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/under-review",
+            "description": "09 · USER não lista revisão de fraude"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(403); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 · USER não aprova revisão",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/review?decision=APPROVE",
+            "description": "10 · USER não aprova revisão"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(403); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 · Confirmar pagamento já concluído",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/confirm",
+            "description": "Transição inválida deve responder 409 sem alterar o pagamento."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Conflito RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(409); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 · Cancelar pagamento já concluído",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/cancel",
+            "description": "Transição inválida deve responder 409 sem alterar o pagamento."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Conflito RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(409); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 · Revisão de fraude — opcional",
+      "description": "Desabilitada por padrão. Defina runFraudReview=true, reviewerAccessToken com ADMIN/FRAUD_REVIEWER e dois pagamentos UNDER_REVIEW distintos, de outro usuário. Não existe endpoint público para promover roles. Nunca use o mesmo pagamento nos dois caminhos.",
+      "item": [
+        {
+          "name": "01 · Listar pagamentos em revisão",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/under-review?page=0&size=20&sort=createdAt,desc",
+            "description": "01 · Listar pagamentos em revisão"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"items\",\"page\",\"size\",\"totalElements\",\"totalPages\",\"sort\"],\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}},\"page\":{\"type\":\"integer\"},\"size\":{\"type\":\"integer\"},\"totalElements\":{\"type\":\"integer\"},\"totalPages\":{\"type\":\"integer\"},\"sort\":{\"type\":\"string\",\"minLength\":1}}}));",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 · Aprovar pagamento retido",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{heldPaymentIdApprove}}/review?decision=APPROVE",
+            "description": "02 · Aprovar pagamento retido"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Aprovado para PENDING\", () => pm.expect(pm.response.json().status).to.eql(\"PENDING\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 · Rejeitar outro pagamento retido",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{heldPaymentIdReject}}/review?decision=REJECT",
+            "description": "03 · Rejeitar outro pagamento retido"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Payload conforme contrato\", () => pm.response.to.have.jsonSchema({\"type\":\"object\",\"required\":[\"id\",\"userId\",\"amount\",\"currency\",\"description\",\"status\",\"createdAt\",\"updatedAt\",\"version\"],\"properties\":{\"id\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"userId\":{\"type\":\"string\",\"pattern\":\"^[0-9a-fA-F-]{36}$\"},\"amount\":{\"type\":\"number\",\"minimum\":0.01},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"description\":{\"type\":[\"string\",\"null\"]},\"status\":{\"enum\":[\"PENDING\",\"UNDER_REVIEW\",\"COMPLETED\",\"CANCELLED\"]},\"createdAt\":{\"type\":\"string\",\"minLength\":1},\"updatedAt\":{\"type\":\"string\",\"minLength\":1},\"version\":{\"type\":[\"integer\",\"null\"]}}}));",
+                  "pm.test(\"Rejeitado para CANCELLED\", () => pm.expect(pm.response.json().status).to.eql(\"CANCELLED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{reviewerAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
       "event": [
         {
           "listen": "prerequest",
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.collectionVariables.set('email', 'postman-' + Date.now() + '@example.com');"
+              "if (pm.collectionVariables.get(\"runFraudReview\") !== \"true\") { pm.execution.skipRequest(); } else { [\"reviewerAccessToken\",\"heldPaymentIdApprove\",\"heldPaymentIdReject\"].forEach(k => { if (!pm.collectionVariables.get(k)) throw new Error(\"Configure \" + k + \" para revisão de fraude\"); }); if (pm.collectionVariables.get(\"heldPaymentIdApprove\") === pm.collectionVariables.get(\"heldPaymentIdReject\")) throw new Error(\"Use dois pagamentos distintos\"); }"
             ]
           }
+        }
+      ]
+    },
+    {
+      "name": "07 · Encerrar sessão",
+      "item": [
+        {
+          "name": "01 · Logout revoga refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/logout",
+            "description": "Mantém variáveis para inspeção. JWT de acesso continua válido até expirar; logout revoga família de refresh.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+                  "pm.test(\"Sem corpo\", () => pm.expect(pm.response.text()).to.eql(\"\"));",
+                  ""
+                ]
+              }
+            }
+          ]
         },
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(201);",
-              "});"
-            ]
-          }
+          "name": "02 · Refresh após logout é rejeitado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "description": "02 · Refresh após logout é rejeitado",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Content-Type JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/json/i));",
+                  "pm.test(\"Erro RFC 7807\", () => { const b = pm.response.json(); pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"); pm.expect(b.status).to.eql(401); [\"type\",\"title\",\"detail\"].forEach(k => pm.expect(b[k]).to.be.a(\"string\").and.not.empty); });",
+                  ""
+                ]
+              }
+            }
+          ]
         }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"Postman User\"\n}"
-        },
-        "url": "{{baseUrl}}/api/v1/auth/register"
-      }
-    },
-    {
-      "name": "Login",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.collectionVariables.set('accessToken', body.accessToken);"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
-        },
-        "url": "{{baseUrl}}/api/v1/auth/login"
-      }
-    },
-    {
-      "name": "Missing token",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(401);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "url": "{{baseUrl}}/api/v1/payments"
-      }
-    },
-    {
-      "name": "Missing idempotency key",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(400);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          {"key": "Content-Type", "value": "application/json"},
-          {"key": "Authorization", "value": "Bearer {{accessToken}}"}
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"amount\": \"15.50\",\n  \"currency\": \"BRL\",\n  \"description\": \"postman\"\n}"
-        },
-        "url": "{{baseUrl}}/api/v1/payments"
-      }
-    },
-    {
-      "name": "Create payment",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(201);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.collectionVariables.set('paymentId', body.id);"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          {"key": "Content-Type", "value": "application/json"},
-          {"key": "Authorization", "value": "Bearer {{accessToken}}"},
-          {"key": "Idempotency-Key", "value": "{{$guid}}"}
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"amount\": \"15.50\",\n  \"currency\": \"BRL\",\n  \"description\": \"postman\"\n}"
-        },
-        "url": "{{baseUrl}}/api/v1/payments"
-      }
-    },
-    {
-      "name": "List payments default page",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.test('default page metadata', function () {",
-              "  pm.expect(body.page).to.eql(0);",
-              "  pm.expect(body.size).to.eql(20);",
-              "  pm.expect(body.sort).to.eql('createdAt,desc');",
-              "  pm.expect(body.totalElements).to.be.at.least(1);",
-              "  pm.expect(body.items[0].id).to.eql(pm.collectionVariables.get('paymentId'));",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments?page=0&size=20&sort=createdAt,desc"
-      }
-    },
-    {
-      "name": "List payments next page",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.test('second page is empty when only one payment exists', function () {",
-              "  pm.expect(body.page).to.eql(1);",
-              "  pm.expect(body.size).to.eql(1);",
-              "  pm.expect(body.sort).to.eql('createdAt,asc');",
-              "  pm.expect(body.items).to.eql([]);",
-              "  pm.expect(body.totalElements).to.eql(1);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments?page=1&size=1&sort=createdAt,asc"
-      }
-    },
-    {
-      "name": "List payments rejects size above 100",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(400);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.test('size is rejected rather than clamped', function () {",
-              "  pm.expect(body.title).to.eql('Validation Error');",
-              "  pm.expect(body.detail).to.eql('size must be between 1 and 100');",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments?page=0&size=101"
-      }
-    },
-    {
-      "name": "List payments rejects an offset above 10000",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(400);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.test('offset cap', function () {",
-              "  pm.expect(body.title).to.eql('Validation Error');",
-              "  pm.expect(body.detail).to.eql('page is too large; page * size must be <= 10000');",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments?page=21474837&size=100"
-      }
-    },
-    {
-      "name": "List payments rejects sort outside the allowlist",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(400);",
-              "});",
-              "const body = pm.response.json();",
-              "pm.test('sort allowlist', function () {",
-              "  pm.expect(body.title).to.eql('Validation Error');",
-              "  pm.expect(body.detail).to.include('sort must be one of');",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments?sort=amount,desc"
-      }
-    },
-    {
-      "name": "Get payment",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}"
-      }
-    },
-    {
-      "name": "Confirm payment",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/confirm"
-      }
-    },
-    {
-      "name": "Unknown payment",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(404);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/payments/00000000-0000-0000-0000-000000000000"
-      }
-    },
-    {
-      "name": "List notifications",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status', function () {",
-              "  pm.response.to.have.status(200);",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{accessToken}}"}],
-        "url": "{{baseUrl}}/api/v1/notifications"
-      }
+      ]
     }
   ]
 }

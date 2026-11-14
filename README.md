@@ -118,7 +118,7 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ./scripts/validate-api.sh
 ```
 
-The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The same statuses are in `src/test/postman/payments-v1.postman_collection.json`. Paginated list examples are in that collection. The load test and the list index explain are in [perf/README.md](perf/README.md).
+The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The [Postman workflow](docs/postman.md) covers all business endpoints with ordered folders, preserved collection variables, token reuse, payload tests, pagination, cancellation, and optional fraud review. The load test and the list index explain are in [perf/README.md](perf/README.md).
 
 ### Kubernetes migration Job
 

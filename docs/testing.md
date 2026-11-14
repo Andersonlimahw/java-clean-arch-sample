@@ -1,3 +1,10 @@
+---
+title: Testing
+status: active
+updated: 2026-11-13
+related: [architecture.md, deploy.md, ../scripts/ci-local.sh]
+---
+
 # Testing guide
 
 ## Test pyramid
@@ -7,6 +14,16 @@
 3. **HTTP smoke and performance checks** exercise a running local stack through the Postman/Newman collection, `scripts/validate-api.sh`, and the k6 scenario in `perf/`.
 
 The repository has no Maven Wrapper. Install Maven and invoke `mvn` from the project root.
+
+## Canonical local gate
+
+`scripts/ci-local.sh` is strict by design. It validates shell syntax, Docker Compose, both Kubernetes overlays with kustomize and kubeconform, and then runs `mvn -B clean verify`. Missing Docker, Compose, kustomize, or a reachable Docker daemon is a failed gate; the script never reports skipped infrastructure as success.
+
+```bash
+rtk proxy bash scripts/ci-local.sh
+```
+
+The gate writes rendered manifests to a temporary directory and removes them on exit. Use the focused commands above only for iteration; they are not a substitute for the full gate.
 
 ## Maven commands
 
@@ -73,7 +90,7 @@ newman run src/test/postman/payments-v1.postman_collection.json \
   --env-var baseUrl=http://127.0.0.1:8080
 ```
 
-The collection checks response statuses and the missing-token path. Notification delivery is eventual; this collection checks the notification-list status but does not wait for the created payment notification. `scripts/validate-api.sh` polls until that notification appears.
+The collection covers all business endpoints with ordered folders, collection variables, inherited bearer authentication, refresh rotation, status and payload assertions, and bounded notification polling. Fraud review is optional and skipped by default because it needs a separate reviewer and two held payments. See [Postman workflow](postman.md) for setup, persistence, expected errors, and Newman usage. `scripts/validate-api.sh` provides the complementary HTTP smoke.
 
 ## k6 payment-list test
 
@@ -92,4 +109,14 @@ The report includes separate `early_pages` and `deep_pages` measurements. Read `
 - Shared containers: `src/test/java/com/muse/payments/SharedContainers.java` and `TestcontainersBase.java`.
 - Testcontainers dependency version: `pom.xml`.
 - API smoke: `scripts/validate-api.sh` and `src/test/postman/payments-v1.postman_collection.json`.
+- Documentation contract: `scripts/validate-docs.sh` and `docs/llms.txt`.
 - k6 workflow: `perf/seed-payments.sh`, `perf/run-k6.sh`, and `perf/list-payments.js`.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=ArchitectureTest,ListNotificationsQueryHandlerTest test
+rtk proxy bash scripts/validate-docs.sh
+```
+
+Expected result: focused architecture/application tests pass and the documentation audit reports zero missing front-matter or broken links.

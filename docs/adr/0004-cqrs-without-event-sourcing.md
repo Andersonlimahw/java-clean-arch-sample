@@ -13,7 +13,7 @@ Use CQRS as a code boundary, not as event sourcing.
 
 - Payment commands are `*Command` + `*CommandHandler`. The handler enforces invariants, saves the current row, and appends integration events. Identity commands use the same handler types and do not write the outbox.
 - Payment queries are `*Query` + `*QueryHandler` and return records (`PaymentResponse`). Identity has commands only; `RegisterCommandHandler` returns `UserResponse`, and login and refresh return `AuthTokensResponse`.
-- `GET /api/v1/notifications` is the exception: `NotificationController` calls `NotificationRepository` and returns the domain type `Notification`. That module has no `application` package.
+- `GET /api/v1/notifications` now uses `ListNotificationsQueryHandler` and returns an application response record. The controller does not expose a domain object or repository.
 - The `payments` table stores the current state. `version` is the optimistic lock.
 - Domain events are transient inside the aggregate and are translated to outbox rows before the transaction commits. They are not the system of record.
 

@@ -1,3 +1,10 @@
+---
+title: Concurrency
+status: active
+updated: 2026-11-13
+related: [architecture.md, data.md, testing.md]
+---
+
 # Concurrency and consistency
 
 ## Payment optimistic locking
@@ -32,3 +39,11 @@ The outbox relay selects eligible unpublished rows with `FOR UPDATE SKIP LOCKED`
 - Cache key, TTL, and local per-key lock: `src/main/java/com/muse/payments/payments/infrastructure/cache/PaymentCacheService.java`.
 - Outbox claim/publish lifecycle: `src/main/java/com/muse/payments/shared/infrastructure/OutboxRelayService.java` and `OutboxJpaRepository.java`.
 - Idempotency cleanup: `src/main/java/com/muse/payments/shared/infrastructure/idempotency/IdempotencyCleanup.java` and `JdbcIdempotencyRepository.java`.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=PaymentOptimisticLockRaceIT,IdempotencyServiceTest,PaymentCacheServiceTest test
+```
+
+Expected result: concurrent updates conflict safely, leases remain scoped, and cache stampede protection loads once.

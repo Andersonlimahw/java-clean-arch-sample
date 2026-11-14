@@ -1,3 +1,10 @@
+---
+title: HTTP API
+status: active
+updated: 2026-11-13
+related: [architecture.md, rules/api-auth-context.md, testing.md]
+---
+
 # HTTP API
 
 Base path: `/api/v1`. The application uses stateless RS256 bearer tokens. Roles are read from the JWT `roles` claim and mapped to `ROLE_USER`, `ROLE_ADMIN`, and `ROLE_FRAUD_REVIEWER`.
@@ -69,3 +76,11 @@ Errors use `application/problem+json` (RFC 7807). The body contains `type`, `tit
 - Pagination allowlist: `src/main/java/com/muse/payments/payments/application/ListPaymentsQueryHandler.java` and `src/main/java/com/muse/payments/payments/application/PaymentSorts.java`.
 - Problem details: `src/main/java/com/muse/payments/shared/web/GlobalExceptionHandler.java`.
 - Authentication rate limit: `src/main/java/com/muse/payments/identity/infrastructure/AuthRateLimiter.java`.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=SecurityWebTest test
+```
+
+Expected result: protected routes, RFC 7807 errors, and OpenAPI auth-context checks pass.

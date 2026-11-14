@@ -1,3 +1,10 @@
+---
+title: Observability
+status: active
+updated: 2026-11-13
+related: [messaging.md, resilience.md, deploy.md]
+---
+
 # Observability
 
 The process exposes health, Prometheus metrics, and OpenTelemetry traces. PostgreSQL remains the source of truth. Metrics describe the running process; they are not a second ledger.
@@ -93,3 +100,11 @@ PROMETHEUS_CONFIG=./deploy/observability/prometheus-host.yml \
 Leave `PROMETHEUS_CONFIG` unset for the all-in-compose stack. The default file still scrapes `app:8080`. Run one app, not both: the two files are alternatives, so the same process is not scraped twice.
 
 Commands in this page use the Compose V2 plugin, `docker compose`. The V1 binary is `docker-compose`. Both read `docker-compose.yml`. If the plugin is missing, pass the same arguments to `docker-compose`.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=ObservabilityMetricsIT,OtlpEndpointNormalizerTest test
+```
+
+Expected result: metrics scrape and OTLP endpoint normalization complete without errors.

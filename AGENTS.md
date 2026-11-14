@@ -15,3 +15,13 @@ This repository is a production-grade Payments Platform built with Java 25, Spri
 - Worktrees are located under `.worktrees/<feature-name>`.
 - Always prefix shell commands with `rtk`.
 - Before PR creation or merging, execute: `mvn -B clean verify` (with Docker running for Testcontainers).
+
+## Documentation index
+- [Postman workflow](docs/postman.md) — maintain request examples and status/payload assertions with every API contract change; keep workflow state in collection variables.
+- [Documentation index](docs/README.md) — human entry point for architecture, API, data, resilience, testing, operations, ADRs, and rules.
+- [LLM wiki index](docs/llms.txt) — flat machine-readable inventory regenerated after documentation changes.
+- [Refactor and validation rules](docs/rules/refactor-and-validation.md) — architecture-boundary, regression-test, local-gate, and documentation invariants.
+- [API auth context rule](docs/rules/api-auth-context.md) — keeps `CurrentUser` out of request schemas and OpenAPI bodies.
+- [Architecture decisions](docs/adr/README.md) — immutable trade-offs; new cross-cutting decisions use the next ADR number.
+
+Documentation changes must preserve front-matter on non-ADR Markdown files and include an `## Eval` section for feature or operational guidance. Run `rtk proxy bash scripts/validate-docs.sh` and regenerate `docs/llms.txt` before delivery.

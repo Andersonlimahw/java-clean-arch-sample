@@ -1,3 +1,10 @@
+---
+title: Deployment
+status: active
+updated: 2026-11-13
+related: [testing.md, observability.md, architecture.md]
+---
+
 # Deploy
 
 The artifact is the Docker image built from the repository `Dockerfile`. `ARG JAVA_MAJOR=25` selects `maven:3.9-eclipse-temurin-25-alpine` for the build and `eclipse-temurin:25-jre-alpine` for the runtime. Railway, Render, Cloud Run, and Kubernetes all run that image. One process serves HTTP, relays the outbox, and consumes notification messages. PostgreSQL is the source of truth. Redis and RabbitMQ are required beside it.
@@ -163,4 +170,12 @@ Apply with `scripts/k8s-apply.sh --secret-env-file secrets.env` after the image 
 
 `scripts/validate-api.sh` registers a unique user, logs in, rejects a missing token and a missing idempotency key, creates and confirms a payment, fetches that payment, rejects an unknown id, and polls notifications until the payment id is present or `NOTIFY_TIMEOUT_SECONDS` (default 10) elapses. It prints each status code. Set `BASE_URL` when the process is not on `http://127.0.0.1:8080`.
 
-The Postman collection at `src/test/postman/payments-v1.postman_collection.json` asserts the same status codes and generates a new email before register. It does not poll until the notification row exists; the shell script does.
+The Postman collection at `src/test/postman/payments-v1.postman_collection.json` validates status codes and payloads, generates a new email before register, and polls for the payment notification in Runner/Newman with a bounded retry count. See [Postman workflow](postman.md) for the ordered requests and variable persistence.
+
+## Eval
+
+```bash
+rtk bash -n scripts/ci-local.sh scripts/k8s-apply.sh scripts/validate-api.sh
+```
+
+Expected result: deployment and local validation scripts pass shell syntax checks; full infrastructure validation requires Docker, kustomize, and kubeconform.

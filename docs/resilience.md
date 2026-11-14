@@ -1,3 +1,10 @@
+---
+title: Resilience
+status: active
+updated: 2026-11-13
+related: [architecture.md, observability.md, testing.md]
+---
+
 # Fraud-screening resilience
 
 Payment creation calls the fraud provider through `FraudScreeningPort`. The production adapter is `HttpFraudScreeningAdapter`; resilience belongs to this infrastructure adapter, leaving the payment domain independent of Resilience4j and HTTP.
@@ -35,3 +42,11 @@ Startup validates related time budgets: connect timeout cannot exceed the time l
 - Profile properties and startup invariants: `src/main/java/com/muse/payments/payments/infrastructure/fraud/FraudScreeningConfiguration.java`, `FraudScreeningProperties.java`, and `src/main/resources/application.yml`, `application-local.yml`, `application-prod.yml`.
 - Review authorization and state changes: `src/main/java/com/muse/payments/payments/application/ReviewPaymentCommandHandler.java` and `src/main/java/com/muse/payments/payments/web/PaymentController.java`.
 - Failure policy decision: [ADR 0012](adr/0012-fraud-screening-failure-policy.md).
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest='*FraudScreening*Test' test
+```
+
+Expected result: provider failure falls back to `UNDER_REVIEW` and resilience budgets remain bounded.

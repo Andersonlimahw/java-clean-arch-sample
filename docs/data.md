@@ -1,3 +1,10 @@
+---
+title: Data Model
+status: active
+updated: 2026-11-13
+related: [architecture.md, concurrency.md, testing.md]
+---
+
 # Database schema and indexes
 
 PostgreSQL is the system of record. Flyway scripts are append-only and run in version order from `src/main/resources/db/migration`.
@@ -54,3 +61,11 @@ The V6 SQL comment says no payment query filters by status. Current code does fi
 - Runtime Flyway lock setting: `src/main/resources/application.yml`.
 - Payment list and held-payment queries: `src/main/java/com/muse/payments/payments/application/ListPaymentsQueryHandler.java`, `src/main/java/com/muse/payments/payments/application/ListHeldPaymentsQueryHandler.java`, and `src/main/java/com/muse/payments/payments/infrastructure/PaymentJpaRepository.java`.
 - Outbox and expiry query patterns: `src/main/java/com/muse/payments/shared/infrastructure/OutboxJpaRepository.java` and `src/main/java/com/muse/payments/shared/infrastructure/idempotency/JdbcIdempotencyRepository.java`.
+
+## Eval
+
+```bash
+rtk mvn -q -Dtest=MigrationOnlyModeTest,JavaVersionPinsTest test
+```
+
+Expected result: migration-only startup and version pins remain valid.

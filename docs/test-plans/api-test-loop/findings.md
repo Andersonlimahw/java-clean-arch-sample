@@ -1,3 +1,10 @@
+---
+title: API Test Loop Findings
+status: active
+updated: 2026-11-13
+related: [loop.md, ../../testing.md, ../../api.md]
+---
+
 # API findings
 
 ## API-FINDING-001 — CurrentUser appears as OpenAPI request input
