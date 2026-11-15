@@ -154,12 +154,14 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 | Tool | UI / Port | Default Credentials | Documentation & Guide |
 |---|---|---|---|
-| **Grafana** | HTTP `3000` | User: `payments`, Password: `local-observability-only` | [docs/observability.md](docs/observability.md), [Grafana UI](http://localhost:3000) |
-| **Prometheus** | HTTP `9090` | Public metrics dashboard | [docs/observability.md](docs/observability.md), [Prometheus UI](http://localhost:9090) |
-| **Jaeger UI** | HTTP `16686` | Distributed traces UI | [docs/observability.md](docs/observability.md), [Jaeger UI](http://localhost:16686) |
+| **Grafana** | HTTP `3000` | User: `payments`, Password: `local-observability-only` | [docs/observability.md](docs/observability.md), [Payments Platform Dashboard](http://localhost:3000/d/payments-platform/payments-platform) |
+| **Prometheus** | HTTP `9090` | Public metrics dashboard | [docs/observability.md](docs/observability.md), [Prometheus Graph UI](http://localhost:9090/graph) |
+| **Jaeger UI** | HTTP `16686` | Distributed traces UI | [docs/observability.md](docs/observability.md), [Jaeger Search](http://localhost:16686/search?service=payments-platform) |
 | **OTEL Collector** | HTTP `4318` (OTLP HTTP), `4317` (gRPC) | Ingestion pipeline | [docs/observability.md](docs/observability.md) |
-| **Kibana** *(logs profile)* | HTTP `5601` | Single-node local cluster | [docs/observability.md](docs/observability.md) (started with `--profile logs`) |
-| **Elasticsearch** *(logs profile)* | HTTP `9200` | HTTP loopback | [docs/observability.md](docs/observability.md) |
+| **Kibana** *(logs profile)* | HTTP `5601` | Search UI (local search cluster) | [docs/observability.md](docs/observability.md), [Kibana UI](http://localhost:5601) |
+| **Elasticsearch** *(logs profile)* | HTTP `9200` | Search storage engine | [docs/observability.md](docs/observability.md) |
+
+> **Note on Local Logs vs. Kibana:** In local development, the application writes colored human-readable logs directly to standard output (`stdout`), visible in the IntelliJ console or terminal. The optional `--profile logs` starts Elasticsearch and Kibana search infrastructure, but there is no local log shipper (such as Filebeat or Vector) running on the host Mac to capture IntelliJ's terminal stdout into Elasticsearch. In production (Kubernetes), containers emit structured ECS JSON to stdout, which a cluster DaemonSet automatically ships to Elasticsearch for Kibana querying.
 
 For comprehensive architecture decisions, performance tuning, and operational runbooks, browse the complete documentation index at [docs/README.md](docs/README.md) or the machine-readable inventory at [docs/llms.txt](docs/llms.txt).
 

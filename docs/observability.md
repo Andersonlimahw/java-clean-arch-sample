@@ -69,9 +69,9 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml config
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 ```
 
-- Jaeger UI: `http://127.0.0.1:16686`
-- Prometheus: `http://127.0.0.1:9090`
-- Grafana: `http://127.0.0.1:3000`. Sign in with the locally configured `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD`; keep local credential values out of documentation and version control. The port is bound to loopback.
+- Jaeger UI: `http://127.0.0.1:16686` (Search traces directly: [http://localhost:16686/search?service=payments-platform](http://localhost:16686/search?service=payments-platform))
+- Prometheus: `http://127.0.0.1:9090` (Graph and query UI: [http://localhost:9090/graph](http://localhost:9090/graph))
+- Grafana: `http://127.0.0.1:3000`. Sign in with default user `payments` and password `local-observability-only` (or custom `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD`). Open the pre-built [Payments Platform Dashboard](http://localhost:3000/d/payments-platform/payments-platform) directly to see HTTP latency p95, status rates, outbox lag, and queue metrics.
 
 Logs profile (Elasticsearch capped at 512 MB heap, plus Kibana):
 
@@ -79,7 +79,8 @@ Logs profile (Elasticsearch capped at 512 MB heap, plus Kibana):
 docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile logs up -d
 ```
 
-Kibana: `http://127.0.0.1:5601`. Elasticsearch security is off because this port is loopback-only. The profile does not collect logs. Run the app with the `prod` profile to emit ECS JSON on stdout, and ship that stream with a collector you already operate. Do not enable the `prod` profile in tests.
+Kibana: `http://127.0.0.1:5601`. Elasticsearch security is off because this port is loopback-only.
+> **Log Shipping Invariant:** In local development, the application streams logs directly to standard output (`stdout`), visible in the IntelliJ console or terminal. The `logs` profile spins up Elasticsearch and Kibana search infrastructure, but there is no local log shipper (such as Filebeat or Vector) running on the host Mac to capture IntelliJ's terminal stdout into Elasticsearch. In production (Kubernetes), containers emit structured ECS JSON (`logging.structured.format.console=ecs`) to stdout, which a cluster DaemonSet automatically ships to Elasticsearch for Kibana querying. Do not enable the `prod` profile in tests.
 
 `OTEL_EXPORTER_OTLP_ENDPOINT` is the collector base URL (`http://otel-collector:4318`). `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the full traces URL (`http://otel-collector:4318/v1/traces`) and wins when both are set. Profile `prod` exports nothing until one of them is set, and it samples 10% unless `TRACING_SAMPLING_PROBABILITY` is set. Spring Boot 3.5 loads `OtlpEndpointNormalizer` from `META-INF/spring.factories` and appends `/v1/traces` when the value is only a base URL. This repository does not provision a hosted collector.
 
