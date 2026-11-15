@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS notifications (
+CREATE TABLE notifications (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     payment_id UUID NOT NULL,
@@ -8,5 +8,5 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_notifications_user_id
+CREATE INDEX idx_notifications_user_id
     ON notifications (user_id, created_at DESC);

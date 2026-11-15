@@ -14,8 +14,7 @@ Baseline before refactor (measured 2026-11-11): `mvn test` → 45 tests, 0 failu
 - Java 25 (`<java.version>25</java.version>`; compile with release 25), Maven, **Spring Boot 3.5.16**, Spring Modulith 1.4.x (BOM), springdoc-openapi 2.8.x, Testcontainers (Boot-managed; must work with Docker Engine 29 → requires Testcontainers ≥ 1.21.4 — override `testcontainers.version` if Boot's is older), ArchUnit 1.4.x.
 - No Lombok in new code (records + explicit constructors).
 - PostgreSQL 16, Redis 7, RabbitMQ 3.13 (management image).
-- Flyway; migrations are **append-only**. Version ownership (avoid collisions across parallel PRs):
-  `V1__shared_outbox_inbox.sql` (foundation), `V2__identity.sql`, `V3__payments.sql`, `V4__notifications.sql`, later fixes use `V5+` claimed in the PR.
+- Flyway; migrations were append-only through the initial V1–V7 history. Event Sourcing decision D3 supersedes that policy for the clean-database rollout: the current schema is consolidated into V1–V4, with no backfill.
 - **No cross-module foreign keys** (modules own their tables; references are UUID columns + index). Intra-module FKs required.
 - UUID PKs generated in the application (`UUID.randomUUID()`), `timestamptz` columns, `version bigint` for optimistic locking on aggregates.
 

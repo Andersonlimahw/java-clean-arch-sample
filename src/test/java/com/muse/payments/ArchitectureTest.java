@@ -95,4 +95,10 @@ class ArchitectureTest {
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAPackage("..infrastructure..")
             .as("Application must not import infrastructure adapters");
+
+    @ArchTest
+    static final ArchRule event_store_adapters_should_stay_in_shared_infrastructure = noClasses()
+            .that().resideOutsideOfPackage("..shared.infrastructure.eventstore..")
+            .should().dependOnClassesThat().resideInAPackage("..shared.infrastructure.eventstore..")
+            .as("Only the shared event-store infrastructure package may depend on its adapters");
 }

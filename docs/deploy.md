@@ -34,7 +34,7 @@ Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env
 
 `prod` without JWT PEMs refuses to start. That is intentional.
 
-A database that already applied the old `V6__payment_screening_reason` from this branch, before that script became `V7__payment_screening_reason`, will not migrate cleanly. Drop and recreate that database. `V6__payments_list_index` is the list index and must stay V6.
+The Event Sourcing rollout rewrites the migration history as four consolidated migrations and assumes a clean database; it does not backfill rows from the former V1–V7 schema. The local-only `scripts/db-reset.sh` replays the new history. Production migration and cutover are outside the rollout scope, so do not apply the rewritten history to an existing production database.
 
 Plugin URLs are not bound. `DATABASE_URL`, `REDIS_URL`, and `CLOUDAMQP_URL` do nothing until you copy the host, port, user, and password into the variables above. `DB_URL` must be a JDBC URL.
 
