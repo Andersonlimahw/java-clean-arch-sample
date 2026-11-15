@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PaymentTest {
 
     @Test
-    @DisplayName("Payment.create sets status to PENDING and records PaymentCreatedEvent")
+    @DisplayName("Payment.create sets status to PENDING and records PaymentInitiatedEvent")
     void create_shouldInitializePendingPaymentAndRecordEvent() {
         UUID userId = UUID.randomUUID();
         Money money = Money.of(new BigDecimal("99.90"), "BRL");
@@ -25,11 +25,12 @@ class PaymentTest {
         assertThat(payment.getUserId()).isEqualTo(userId);
         assertThat(payment.getMoney()).isEqualTo(money);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(payment.getVersion()).isNull();
+        assertThat(payment.getVersion()).isZero();
+        assertThat(payment.version()).isEqualTo(1L);
 
         var events = payment.pullDomainEvents();
         assertThat(events).hasSize(1);
-        var event = (PaymentCreatedEvent) events.getFirst();
+        var event = (PaymentInitiatedEvent) events.getFirst();
         assertThat(event.paymentId()).isEqualTo(payment.getId());
         assertThat(event.userId()).isEqualTo(userId);
         assertThat(event.amount()).isEqualByComparingTo("99.90");
@@ -116,7 +117,7 @@ class PaymentTest {
         assertThat(released.getScreeningReason()).isNull();
         assertThat(released.getHeldReason()).isEqualTo("down");
         assertThat(released.getReviewerId()).isEqualTo(reviewer);
-        assertThat(released.pullDomainEvents()).singleElement().isInstanceOf(PaymentCreatedEvent.class);
+        assertThat(released.pullDomainEvents()).singleElement().isInstanceOf(PaymentReleasedFromReviewEvent.class);
 
         Payment rejected = Payment.createUnderReview(
                 UUID.randomUUID(), UUID.randomUUID(), Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
@@ -124,8 +125,8 @@ class PaymentTest {
         rejected.rejectFromReview(reviewer, Instant.now(), "Rejected in fraud review");
         assertThat(rejected.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
         var rejectedEvents = rejected.pullDomainEvents();
-        assertThat(rejectedEvents.getFirst()).isInstanceOf(PaymentCancelledEvent.class);
-        assertThat(((PaymentCancelledEvent) rejectedEvents.getFirst()).reason()).isEqualTo("Rejected in fraud review");
+        assertThat(rejectedEvents.getFirst()).isInstanceOf(PaymentRejectedInReviewEvent.class);
+        assertThat(((PaymentRejectedInReviewEvent) rejectedEvents.getFirst()).reason()).isEqualTo("Rejected in fraud review");
     }
 
     @Test

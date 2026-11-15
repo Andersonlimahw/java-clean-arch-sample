@@ -8,7 +8,7 @@ import com.muse.payments.identity.application.LoginRequest;
 import com.muse.payments.identity.application.RegisterRequest;
 import com.muse.payments.notifications.domain.Notification;
 import com.muse.payments.notifications.domain.NotificationRepository;
-import com.muse.payments.notifications.infrastructure.NotificationJpaAdapter;
+import com.muse.payments.notifications.infrastructure.EventSourcedNotificationRepository;
 import com.muse.payments.notifications.infrastructure.PaymentNotificationConsumer;
 import com.muse.payments.payments.application.CreatePaymentRequest;
 import com.muse.payments.shared.infrastructure.OutboxRelayService;
@@ -169,6 +169,9 @@ class MessagingNotificationsIT extends TestcontainersBase {
         // Notification count must remain strictly 1
         long countAfterDuplicate = notificationRepository.countByPaymentId(paymentId);
         assertThat(countAfterDuplicate).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM event_store WHERE stream_type = 'Notification' AND payload->>'paymentId' = ?",
+                Long.class, paymentId.toString())).isEqualTo(1L);
 
         // Processed events table has exactly 1 entry for this consumer and eventId
         Integer processedEventsCount = jdbcTemplate.queryForObject(
@@ -533,7 +536,7 @@ class MessagingNotificationsIT extends TestcontainersBase {
 
         @Bean
         @Primary
-        NotificationRepository flakyNotificationRepository(NotificationJpaAdapter delegate) {
+        NotificationRepository flakyNotificationRepository(EventSourcedNotificationRepository delegate) {
             return new NotificationRepository() {
                 @Override
                 public Notification save(Notification notification) {

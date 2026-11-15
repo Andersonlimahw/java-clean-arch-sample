@@ -1,7 +1,5 @@
 package com.muse.payments.payments.application;
 
-import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentSort;
 import com.muse.payments.payments.domain.PaymentStatus;
 import com.muse.payments.shared.application.QueryHandler;
@@ -14,9 +12,9 @@ import java.util.Objects;
 @Service
 public class ListHeldPaymentsQueryHandler implements QueryHandler<ListHeldPaymentsQuery, PageResponse<PaymentResponse>> {
 
-    private final PaymentRepository paymentRepository;
+    private final PaymentReadRepository paymentRepository;
 
-    public ListHeldPaymentsQueryHandler(PaymentRepository paymentRepository) {
+    public ListHeldPaymentsQueryHandler(PaymentReadRepository paymentRepository) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
     }
 

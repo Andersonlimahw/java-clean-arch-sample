@@ -552,6 +552,39 @@ def build_collection():
                 ]
             },
             {
+                "name": "06b · Get Payment History",
+                "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/history",
+                    "description": "Returns the immutable event-sourced timeline for the payment from the payment_history async projection."
+                },
+                "event": [
+                    make_test_script([
+                        'pm.test("Status code is 200 OK", () => pm.response.to.have.status(200));',
+                        'pm.test("Content-Type is JSON", () => pm.expect(pm.response.headers.get("Content-Type")).to.match(/json/i));',
+                        'const body = pm.response.json();',
+                        'const items = body.items || [];',
+                        'const complete = items.length === 2 && items[1].status === "COMPLETED";',
+                        'let attempt = Number(pm.collectionVariables.get("historyPoll") || 0);',
+                        'if (!complete && attempt < 10 && pm.execution && pm.execution.setNextRequest) {',
+                        '  pm.collectionVariables.set("historyPoll", attempt + 1);',
+                        '  setTimeout(() => pm.execution.setNextRequest(pm.info.requestName), 1000);',
+                        '} else {',
+                        '  pm.collectionVariables.set("historyPoll", 0);',
+                        '  pm.test("History page contains initiated and completed facts in order", () => {',
+                        '    pm.expect(body.page).to.eql(0);',
+                        '    pm.expect(body.totalElements).to.eql(2);',
+                        '    pm.expect(items).to.have.lengthOf(2);',
+                        '    pm.expect(items.map(e => e.eventType)).to.eql(["payments.payment-initiated", "payments.payment-completed"]);',
+                        '    pm.expect(items.map(e => e.status)).to.eql(["PENDING", "COMPLETED"]);',
+                        '    items.forEach(e => { pm.expect(e.occurredAt).to.be.a("string"); pm.expect(e.actor).to.eql(pm.collectionVariables.get("userId")); });',
+                        '  });',
+                        '}'
+                    ])
+                ]
+            },
+            {
                 "name": "07 · Create Second Payment for Cancellation",
                 "request": {
                     "method": "POST",

@@ -60,28 +60,6 @@ class ReviewPaymentCommandHandlerTest {
             public Optional<Payment> findById(UUID id) {
                 return Optional.of(payment);
             }
-
-            @Override
-            public java.util.List<Payment> findByUserId(
-                    UUID userId, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
-                return java.util.List.of();
-            }
-
-            @Override
-            public long countByUserId(UUID userId) {
-                return 0;
-            }
-
-            @Override
-            public java.util.List<Payment> findByStatus(
-                    com.muse.payments.payments.domain.PaymentStatus status, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
-                return java.util.List.of();
-            }
-
-            @Override
-            public long countByStatus(com.muse.payments.payments.domain.PaymentStatus status) {
-                return 0;
-            }
         };
         OutboxPort outbox = new OutboxPort() {
             @Override

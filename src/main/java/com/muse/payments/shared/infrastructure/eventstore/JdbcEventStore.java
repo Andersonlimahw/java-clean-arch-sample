@@ -5,8 +5,8 @@ import com.muse.payments.shared.application.EventStore;
 import com.muse.payments.shared.application.EventStream;
 import com.muse.payments.shared.application.StoredEvent;
 import com.muse.payments.shared.application.StreamRef;
-import com.muse.payments.shared.domain.ConflictException;
 import com.muse.payments.shared.domain.DomainEvent;
+import com.muse.payments.shared.domain.OptimisticConcurrencyException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -67,10 +67,12 @@ public class JdbcEventStore implements EventStore {
         }
 
         lockStream(stream);
+        // Allocate the transaction ID before a sequence position can be reserved.
+        jdbcTemplate.queryForObject("SELECT pg_current_xact_id()::text", String.class);
         long currentVersion = jdbcTemplate.queryForObject(SELECT_CURRENT_VERSION, Long.class,
                 stream.type(), stream.id());
         if (currentVersion != expectedVersion) {
-            throw new ConflictException("Expected stream version " + expectedVersion + " but found "
+            throw new OptimisticConcurrencyException("Expected stream version " + expectedVersion + " but found "
                     + currentVersion + " for " + stream.type() + "/" + stream.id());
         }
 
@@ -91,7 +93,7 @@ public class JdbcEventStore implements EventStore {
                         serializer.serializeMetadata(metadata),
                         Timestamp.from(requiredEvent.occurredAt()));
             } catch (DuplicateKeyException exception) {
-                throw new ConflictException("Event stream version is already present for " + stream.type()
+                throw new OptimisticConcurrencyException("Event stream version is already present for " + stream.type()
                         + "/" + stream.id());
             }
             streamVersion = nextVersion;

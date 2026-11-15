@@ -22,3 +22,4 @@ For the full guide index, see [../README.md](../README.md). Implementation guide
 | [0014](0014-web-boundary-and-strict-local-gate.md) | Application boundaries and strict local validation | Accepted |
 | [0015](0015-virtual-thread-hot-paths.md) | Virtual-thread-aware hot paths and batched outbox relay | Accepted |
 | [0016](0016-event-sourcing-with-hybrid-projections.md) | Event sourcing with hybrid projections | Accepted. Supersedes 0004. |
+| [0017](0017-async-projection-position-fence.md) | Safe positional checkpoints across transaction ordering | Accepted. Complements 0016. |

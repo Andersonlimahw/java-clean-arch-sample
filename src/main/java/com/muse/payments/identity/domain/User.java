@@ -1,32 +1,68 @@
 package com.muse.payments.identity.domain;
 
-import com.muse.payments.shared.domain.AggregateRoot;
+import com.muse.payments.shared.domain.DomainEvent;
+import com.muse.payments.shared.domain.EventSourcedAggregate;
 import com.muse.payments.shared.domain.ValidationException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-public class User extends AggregateRoot<UUID> {
+public class User extends EventSourcedAggregate<UUID> {
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
 
-    private final UUID id;
-    private final String email;
-    private final String passwordHash;
-    private final String displayName;
-    private final Set<String> roles;
+    private UUID id;
+    private String email;
+    private String displayName;
+    private Set<String> roles;
     private boolean enabled;
-    private final Instant createdAt;
+    private Instant createdAt;
     private Instant updatedAt;
-    private Long version;
+    private Long projectionVersion;
 
-    public User(
+    private User() {
+    }
+
+    private User(
             UUID id,
             String email,
-            String passwordHash,
+            String displayName,
+            Set<String> roles,
+            boolean enabled,
+            Instant createdAt,
+            Instant updatedAt,
+            Long projectionVersion
+    ) {
+        this.id = Objects.requireNonNull(id, "User ID cannot be null");
+        this.email = validateEmail(email);
+        this.displayName = validateDisplayName(displayName);
+        this.roles = roles == null || roles.isEmpty() ? Set.of("USER") : Set.copyOf(roles);
+        this.enabled = enabled;
+        this.createdAt = createdAt != null ? createdAt : Instant.now();
+        this.updatedAt = updatedAt != null ? updatedAt : this.createdAt;
+        this.projectionVersion = projectionVersion;
+    }
+
+    public static User create(String email, String displayName, Set<String> roles) {
+        String normalizedEmail = validateEmail(email);
+        String normalizedDisplayName = validateDisplayName(displayName);
+        Set<String> resolvedRoles = roles == null || roles.isEmpty() ? Set.of("USER") : Set.copyOf(roles);
+        User user = new User();
+        user.raise(new UserRegisteredEvent(UUID.randomUUID(), normalizedEmail, normalizedDisplayName, resolvedRoles, Instant.now()));
+        return user;
+    }
+
+    public static User rehydrate(List<? extends DomainEvent> history) {
+        return EventSourcedAggregate.rehydrate(User::new, history);
+    }
+
+    public static User rehydrate(
+            UUID id,
+            String email,
             String displayName,
             Set<String> roles,
             boolean enabled,
@@ -34,30 +70,7 @@ public class User extends AggregateRoot<UUID> {
             Instant updatedAt,
             Long version
     ) {
-        this.id = Objects.requireNonNull(id, "User ID cannot be null");
-        this.email = validateEmail(email);
-        this.passwordHash = validatePasswordHash(passwordHash);
-        this.displayName = validateDisplayName(displayName);
-        this.roles = roles == null || roles.isEmpty() ? Set.of("USER") : Set.copyOf(roles);
-        this.enabled = enabled;
-        this.createdAt = createdAt != null ? createdAt : Instant.now();
-        this.updatedAt = updatedAt != null ? updatedAt : this.createdAt;
-        this.version = version;
-    }
-
-    public static User create(String email, String passwordHash, String displayName, Set<String> roles) {
-        Instant now = Instant.now();
-        return new User(
-                UUID.randomUUID(),
-                email,
-                passwordHash,
-                displayName,
-                roles,
-                true,
-                now,
-                now,
-                null
-        );
+        return new User(id, email, displayName, roles, enabled, createdAt, updatedAt, version);
     }
 
     private static String validateEmail(String email) {
@@ -74,11 +87,33 @@ public class User extends AggregateRoot<UUID> {
         return displayName.trim();
     }
 
-    private static String validatePasswordHash(String passwordHash) {
-        if (passwordHash == null || passwordHash.isBlank()) {
-            throw new ValidationException("Password hash cannot be empty");
+    public void disable() {
+        if (!this.enabled) {
+            return;
         }
-        return passwordHash;
+        raise(new UserDisabledEvent(this.id, Instant.now()));
+    }
+
+    @Override
+    protected void apply(DomainEvent event) {
+        switch (event) {
+            case UserRegisteredEvent e -> {
+                this.id = e.userId();
+                this.email = e.email();
+                this.displayName = e.displayName();
+                this.roles = e.roles();
+                this.enabled = true;
+                this.createdAt = e.occurredAt();
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            case UserDisabledEvent e -> {
+                this.enabled = false;
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            default -> throw new IllegalArgumentException("Unsupported user event: " + event.getClass().getName());
+        }
     }
 
     @Override
@@ -88,10 +123,6 @@ public class User extends AggregateRoot<UUID> {
 
     public String getEmail() {
         return email;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
     }
 
     public String getDisplayName() {
@@ -106,11 +137,6 @@ public class User extends AggregateRoot<UUID> {
         return enabled;
     }
 
-    public void disable() {
-        this.enabled = false;
-        this.updatedAt = Instant.now();
-    }
-
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -120,6 +146,9 @@ public class User extends AggregateRoot<UUID> {
     }
 
     public Long getVersion() {
-        return version;
+        if (projectionVersion != null) {
+            return projectionVersion;
+        }
+        return version() == 0 ? null : version() - 1;
     }
 }

@@ -3,6 +3,7 @@ package com.muse.payments.shared.web;
 import com.muse.payments.shared.domain.ConflictException;
 import com.muse.payments.shared.domain.EntityNotFoundException;
 import com.muse.payments.shared.domain.ForbiddenException;
+import com.muse.payments.shared.domain.OptimisticConcurrencyException;
 import com.muse.payments.shared.domain.RateLimitExceededException;
 import com.muse.payments.shared.domain.ValidationException;
 import jakarta.persistence.OptimisticLockException;
@@ -46,7 +47,11 @@ public class GlobalExceptionHandler {
         return createProblemDetail(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
     }
 
-    @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class})
+    @ExceptionHandler({
+            OptimisticLockingFailureException.class,
+            OptimisticLockException.class,
+            OptimisticConcurrencyException.class
+    })
     public ProblemDetail handleOptimisticLock(Exception ex, HttpServletRequest request) {
         log.warn("Concurrent modification at {} correlationId={}", request.getRequestURI(), correlationId());
         ProblemDetail problem = createProblemDetail(HttpStatus.CONFLICT, "Concurrent Modification", "The resource was modified concurrently. Please retry.", request);

@@ -1,7 +1,6 @@
 package com.muse.payments.payments.application;
 
 import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentSort;
 import com.muse.payments.shared.application.QueryHandler;
 import com.muse.payments.shared.domain.ValidationException;
@@ -17,9 +16,9 @@ public class ListPaymentsQueryHandler implements QueryHandler<ListPaymentsQuery,
     public static final int MAX_PAGE_SIZE = 100;
     public static final int MAX_OFFSET = 10_000;
 
-    private final PaymentRepository paymentRepository;
+    private final PaymentReadRepository paymentRepository;
 
-    public ListPaymentsQueryHandler(PaymentRepository paymentRepository) {
+    public ListPaymentsQueryHandler(PaymentReadRepository paymentRepository) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
     }
 

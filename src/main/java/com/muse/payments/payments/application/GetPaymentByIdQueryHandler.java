@@ -1,7 +1,6 @@
 package com.muse.payments.payments.application;
 
 import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.shared.application.QueryHandler;
 import com.muse.payments.shared.domain.EntityNotFoundException;
 import org.springframework.stereotype.Service;
@@ -12,10 +11,10 @@ import java.util.Objects;
 @Service
 public class GetPaymentByIdQueryHandler implements QueryHandler<GetPaymentByIdQuery, PaymentResponse> {
 
-    private final PaymentRepository paymentRepository;
+    private final PaymentReadRepository paymentRepository;
     private final PaymentCachePort paymentCachePort;
 
-    public GetPaymentByIdQueryHandler(PaymentRepository paymentRepository, PaymentCachePort paymentCachePort) {
+    public GetPaymentByIdQueryHandler(PaymentReadRepository paymentRepository, PaymentCachePort paymentCachePort) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
         this.paymentCachePort = Objects.requireNonNull(paymentCachePort);
     }

@@ -13,11 +13,14 @@ import com.muse.payments.payments.application.ReviewPaymentCommand;
 import com.muse.payments.payments.application.ReviewPaymentCommandHandler;
 import com.muse.payments.payments.application.GetPaymentByIdQuery;
 import com.muse.payments.payments.application.GetPaymentByIdQueryHandler;
+import com.muse.payments.payments.application.GetPaymentHistoryQuery;
+import com.muse.payments.payments.application.GetPaymentHistoryQueryHandler;
 import com.muse.payments.payments.application.ListHeldPaymentsQuery;
 import com.muse.payments.payments.application.ListHeldPaymentsQueryHandler;
 import com.muse.payments.payments.application.ListPaymentsQuery;
 import com.muse.payments.payments.application.ListPaymentsQueryHandler;
 import com.muse.payments.payments.application.PageResponse;
+import com.muse.payments.payments.application.PaymentHistoryItemResponse;
 import com.muse.payments.payments.application.PaymentResponse;
 import com.muse.payments.shared.domain.ValidationException;
 import com.muse.payments.shared.security.CurrentUser;
@@ -67,6 +70,7 @@ public class PaymentController {
     private final ConfirmPaymentCommandHandler confirmPaymentHandler;
     private final CancelPaymentCommandHandler cancelPaymentHandler;
     private final GetPaymentByIdQueryHandler getPaymentByIdHandler;
+    private final GetPaymentHistoryQueryHandler getPaymentHistoryHandler;
     private final ListPaymentsQueryHandler listPaymentsHandler;
     private final ListHeldPaymentsQueryHandler listHeldPaymentsHandler;
 
@@ -76,6 +80,7 @@ public class PaymentController {
             ConfirmPaymentCommandHandler confirmPaymentHandler,
             CancelPaymentCommandHandler cancelPaymentHandler,
             GetPaymentByIdQueryHandler getPaymentByIdHandler,
+            GetPaymentHistoryQueryHandler getPaymentHistoryHandler,
             ListPaymentsQueryHandler listPaymentsHandler,
             ListHeldPaymentsQueryHandler listHeldPaymentsHandler
     ) {
@@ -84,6 +89,7 @@ public class PaymentController {
         this.confirmPaymentHandler = Objects.requireNonNull(confirmPaymentHandler);
         this.cancelPaymentHandler = Objects.requireNonNull(cancelPaymentHandler);
         this.getPaymentByIdHandler = Objects.requireNonNull(getPaymentByIdHandler);
+        this.getPaymentHistoryHandler = Objects.requireNonNull(getPaymentHistoryHandler);
         this.listPaymentsHandler = Objects.requireNonNull(listPaymentsHandler);
         this.listHeldPaymentsHandler = Objects.requireNonNull(listHeldPaymentsHandler);
     }
@@ -161,6 +167,20 @@ public class PaymentController {
                 new GetPaymentByIdQuery(id, currentUser.userId(), currentUser.isAdmin() || currentUser.hasRole("FRAUD_REVIEWER"))
         );
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}/history")
+    @Operation(summary = "Get payment event history from the asynchronous payment_history projection")
+    public ResponseEntity<PageResponse<PaymentHistoryItemResponse>> getPaymentHistory(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @Parameter(hidden = true) CurrentUser currentUser
+    ) {
+        boolean readAny = currentUser.isAdmin() || currentUser.hasRole("FRAUD_REVIEWER");
+        return ResponseEntity.ok(getPaymentHistoryHandler.handle(
+                new GetPaymentHistoryQuery(id, currentUser.userId(), readAny, page, size)
+        ));
     }
 
     @GetMapping

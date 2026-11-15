@@ -78,3 +78,12 @@ groups:
         annotations:
           summary: HTTP 5xx ratio is above 1%
           description: Availability SLO is 99.5% over 30 days. This is an early signal, not the SLO itself.
+
+      - alert: ProjectionLagHigh
+        expr: max by (projection) (projection_lag) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Async projection lag is above 100 unprojected events
+          description: An async projector is falling behind event_store commits. Check AsyncProjectionRunner and database load.

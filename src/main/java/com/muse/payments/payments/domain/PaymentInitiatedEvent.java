@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-public record PaymentCreatedEvent(
+public record PaymentInitiatedEvent(
         UUID eventId,
         UUID paymentId,
         UUID userId,
@@ -17,7 +17,7 @@ public record PaymentCreatedEvent(
         Instant occurredAt
 ) implements DomainEvent {
 
-    public PaymentCreatedEvent {
+    public PaymentInitiatedEvent {
         Objects.requireNonNull(eventId, "eventId must not be null");
         Objects.requireNonNull(paymentId, "paymentId must not be null");
         Objects.requireNonNull(userId, "userId must not be null");
@@ -26,7 +26,7 @@ public record PaymentCreatedEvent(
         occurredAt = occurredAt == null ? Instant.now() : occurredAt;
     }
 
-    public PaymentCreatedEvent(UUID paymentId, UUID userId, BigDecimal amount, String currency, String description) {
+    public PaymentInitiatedEvent(UUID paymentId, UUID userId, BigDecimal amount, String currency, String description) {
         this(UUID.randomUUID(), paymentId, userId, amount, currency, description, Instant.now());
     }
 }

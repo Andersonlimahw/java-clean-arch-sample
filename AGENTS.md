@@ -5,7 +5,7 @@ This repository is a production-grade Payments Platform built with Java 25, Spri
 ## Architecture Guidelines
 - **Modular Monolith**: base package `com.muse.payments`. Modules: `shared`, `identity`, `payments`, `notifications`.
 - **Domain Purity**: Domain packages must not reference Spring, JPA, Hibernate, RabbitMQ, Redis, or Jackson.
-- **CQRS**: Commands modify state and record events; Queries return read-only records.
+- **CQRS + Event Sourcing**: Commands replay and append aggregate facts; only projectors update aggregate read models. Users, payments and refresh tokens project synchronously; history and notifications project asynchronously. Credentials stay outside event payloads and are never rebuilt.
 - **Transactional Outbox**: Events persisted to `outbox_events` in the aggregate's transaction (`Propagation.MANDATORY`).
 - **No Cross-Module DB FKs**: Only intra-module foreign keys are allowed.
 - **Security**: RS256 JWT tokens, RFC 7807 `application/problem+json` errors.

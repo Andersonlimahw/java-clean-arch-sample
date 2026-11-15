@@ -37,7 +37,7 @@ Confirm correlation is per attempt. Publisher returns must stay enabled; RabbitM
 
 ## Consumer
 
-`PaymentNotificationConsumer` stores one notification per `(consumer, event_id)` in `processed_events` in the same transaction as the notification insert. The event id is `X-Event-Id`, or a body `eventId` when the header is absent. `paymentId` is not an event id: created, completed, and cancelled events for one payment must all be stored.
+`PaymentNotificationConsumer` records `(consumer, event_id)` in `processed_events` atomically with a `NotificationRecorded` event-store fact. The asynchronous `notifications` projector exposes it after commit. The event id is `X-Event-Id`, or a body `eventId` when absent. Created, completed and cancelled facts remain distinct. Replay updates read models and never republishes the outbox.
 
 - A duplicate `event_id` is acknowledged and ignored.
 - A missing or invalid event id, a missing event type, invalid JSON, a non-object payload, missing identifiers, or an unknown event type is rejected immediately via `AmqpRejectAndDontRequeueException`. The processed-event insert rolls back with the listener transaction, so a later valid delivery of that id is not treated as a duplicate.

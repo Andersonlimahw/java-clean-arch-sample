@@ -1,19 +1,26 @@
 package com.muse.payments.notifications.domain;
 
+import com.muse.payments.shared.domain.DomainEvent;
+import com.muse.payments.shared.domain.EventSourcedAggregate;
+
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-public class Notification {
+public class Notification extends EventSourcedAggregate<UUID> {
 
-    private final UUID id;
-    private final UUID userId;
-    private final UUID paymentId;
-    private final String type;
-    private final String title;
-    private final String message;
-    private final Instant createdAt;
+    private UUID id;
+    private UUID userId;
+    private UUID paymentId;
+    private String type;
+    private String title;
+    private String message;
+    private Instant createdAt;
+
+    private Notification() {
+    }
 
     public Notification(
             UUID id,
@@ -33,50 +40,112 @@ public class Notification {
         this.createdAt = createdAt != null ? createdAt : Instant.now();
     }
 
+    public static Notification record(
+            UUID userId,
+            UUID paymentId,
+            String type,
+            String title,
+            String message,
+            UUID sourceEventId
+    ) {
+        Notification notification = new Notification();
+        notification.raise(new NotificationRecordedEvent(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                userId,
+                paymentId,
+                type,
+                title,
+                message,
+                sourceEventId,
+                Instant.now()
+        ));
+        return notification;
+    }
+
     public static Notification paymentCreated(UUID userId, UUID paymentId, BigDecimal amount, String currency) {
-        UUID id = UUID.randomUUID();
-        String title = "Payment Received";
-        String message = String.format("A new payment of %s %s was successfully created.", amount, currency);
-        return new Notification(id, userId, paymentId, "PAYMENT_CREATED", title, message, Instant.now());
+        return paymentCreated(userId, paymentId, amount, currency, null);
+    }
+
+    public static Notification paymentCreated(
+            UUID userId, UUID paymentId, BigDecimal amount, String currency, UUID sourceEventId) {
+        return record(
+                userId,
+                paymentId,
+                "PAYMENT_CREATED",
+                "Payment Received",
+                String.format("A new payment of %s %s was successfully created.", amount, currency),
+                sourceEventId
+        );
     }
 
     public static Notification paymentHeldForReview(UUID userId, UUID paymentId, BigDecimal amount, String currency) {
-        return new Notification(
-                UUID.randomUUID(),
+        return paymentHeldForReview(userId, paymentId, amount, currency, null);
+    }
+
+    public static Notification paymentHeldForReview(
+            UUID userId, UUID paymentId, BigDecimal amount, String currency, UUID sourceEventId) {
+        return record(
                 userId,
                 paymentId,
                 "PAYMENT_HELD_FOR_REVIEW",
                 "Payment under review",
                 String.format("A payment of %s %s is under review and was not approved.", amount, currency),
-                Instant.now()
+                sourceEventId
         );
     }
 
     public static Notification paymentCompleted(UUID userId, UUID paymentId) {
-        return new Notification(
-                UUID.randomUUID(),
+        return paymentCompleted(userId, paymentId, null);
+    }
+
+    public static Notification paymentCompleted(UUID userId, UUID paymentId, UUID sourceEventId) {
+        return record(
                 userId,
                 paymentId,
                 "PAYMENT_COMPLETED",
                 "Payment Completed",
                 "Payment " + paymentId + " was completed.",
-                Instant.now()
+                sourceEventId
         );
     }
 
     public static Notification paymentCancelled(UUID userId, UUID paymentId, String reason) {
+        return paymentCancelled(userId, paymentId, reason, null);
+    }
+
+    public static Notification paymentCancelled(UUID userId, UUID paymentId, String reason, UUID sourceEventId) {
         String why = reason == null || reason.isBlank() ? "no reason provided" : reason;
-        return new Notification(
-                UUID.randomUUID(),
+        return record(
                 userId,
                 paymentId,
                 "PAYMENT_CANCELLED",
                 "Payment Cancelled",
                 "Payment " + paymentId + " was cancelled: " + why,
-                Instant.now()
+                sourceEventId
         );
     }
 
+    public static Notification rehydrate(List<? extends DomainEvent> history) {
+        return EventSourcedAggregate.rehydrate(Notification::new, history);
+    }
+
+    @Override
+    protected void apply(DomainEvent event) {
+        if (event instanceof NotificationRecordedEvent e) {
+            this.id = e.notificationId();
+            this.userId = e.userId();
+            this.paymentId = e.paymentId();
+            this.type = e.type();
+            this.title = e.title();
+            this.message = e.message();
+            this.createdAt = e.occurredAt();
+            return;
+        }
+        throw new IllegalArgumentException("Unsupported notification event: " + event.getClass().getName());
+    }
+
+    @Override
     public UUID getId() {
         return id;
     }

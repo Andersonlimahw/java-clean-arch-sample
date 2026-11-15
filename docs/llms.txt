@@ -14,7 +14,7 @@ This is the machine-readable documentation index. Read the linked pages for curr
 - [Postman](postman.md): Complete ordered examples, collection variables, token reuse, payload tests, optional fraud review, and Newman.
 - [Postman validation](test-plans/postman-validation.md): Real local API execution, 30 examples, 105 assertions, and Newman export caveat.
 - [Refactor validation](test-plans/refactor-validation.md): Strict local CI results, Kubernetes validation, 154 Maven tests, and the outbox fixture isolation fix.
-- [Data model](data.md): consolidated Flyway V1–V4, event-store kernel, constraints, indexes, and the local reset script `scripts/db-reset.sh`.
+- [Data model](data.md): Flyway V1–V7, active event-sourced aggregates, credentials, sequence/XID fences, independent projection rebuild, snapshots, and the local reset script.
 - [Concurrency](concurrency.md): Optimistic locking, virtual-thread rules, cache stampede protection, leases, and batched outbox claims.
 - [Resilience](resilience.md): Fraud-screening retries, circuit breakers, bulkheads, time limits, and fallback policy.
 - [Messaging](messaging.md): Outbox relay, RabbitMQ routing, retry, deduplication, and DLQ behavior.
@@ -30,6 +30,7 @@ This is the machine-readable documentation index. Read the linked pages for curr
 - [ADR 0014](adr/0014-web-boundary-and-strict-local-gate.md): Application boundary for notifications and strict local validation.
 - [ADR 0015](adr/0015-virtual-thread-hot-paths.md): Password hashing off the virtual-thread carriers and outside transactions, batched outbox relay, compact object headers, and the Java 25 features not adopted.
 - [ADR 0016](adr/0016-event-sourcing-with-hybrid-projections.md): PostgreSQL event store, hybrid projections, outbox preservation, and clean-database migration policy.
+- [ADR 0017](adr/0017-async-projection-position-fence.md): Sequence/XID horizon for lossless concurrent async projection and independent read-model rebuilds.
 
 ## Evaluation
 

@@ -104,6 +104,27 @@ class MigrationJobIT extends SharedContainers {
         );
     }
 
+    @Test
+    @DisplayName("Offline projection rebuild exits successfully without an HTTP server")
+    void projectionRebuildProcessExitsZero() throws Exception {
+        List<String> args = new ArrayList<>(infrastructureArgs(postgres.getJdbcUrl()));
+        args.add("--app.projection-rebuild=payment_history");
+        ProcessResult result = runApplication(args);
+        assertThat(result.exitCode()).as(result.output()).isZero();
+        assertThat(result.output()).contains("Projection-rebuild mode");
+        assertThat(result.output()).doesNotContain("Tomcat started", "Started consumer");
+    }
+
+    @Test
+    @DisplayName("Unknown projection rebuild target exits non-zero")
+    void unknownProjectionRebuildFails() throws Exception {
+        List<String> args = new ArrayList<>(infrastructureArgs(postgres.getJdbcUrl()));
+        args.add("--app.projection-rebuild=does-not-exist");
+        ProcessResult result = runApplication(args);
+        assertThat(result.exitCode()).as(result.output()).isNotZero();
+        assertThat(result.output()).contains("Unknown projection");
+    }
+
     private static void createDatabase(String name) throws Exception {
         try (Connection connection = DriverManager.getConnection(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());

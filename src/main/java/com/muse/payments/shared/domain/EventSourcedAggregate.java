@@ -37,6 +37,17 @@ public abstract class EventSourcedAggregate<ID> extends AggregateRoot<ID> {
         return aggregate;
     }
 
+    protected final void restoreFromSnapshot(long snapshotVersion, List<? extends DomainEvent> tailEvents) {
+        if (this.version != 0 || !peekDomainEvents().isEmpty()) {
+            throw new IllegalStateException("Snapshot restoration requires a new aggregate");
+        }
+        if (snapshotVersion < 0) {
+            throw new IllegalArgumentException("Snapshot version cannot be negative");
+        }
+        this.version = snapshotVersion;
+        replay(Objects.requireNonNull(tailEvents, "Tail events are required"));
+    }
+
     private void replay(List<? extends DomainEvent> events) {
         for (DomainEvent event : events) {
             apply(event);

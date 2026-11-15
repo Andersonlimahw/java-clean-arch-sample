@@ -2,8 +2,10 @@ package com.muse.payments.payments.application;
 
 import com.muse.payments.payments.domain.PaymentCancelledEvent;
 import com.muse.payments.payments.domain.PaymentCompletedEvent;
-import com.muse.payments.payments.domain.PaymentCreatedEvent;
 import com.muse.payments.payments.domain.PaymentHeldForReviewEvent;
+import com.muse.payments.payments.domain.PaymentInitiatedEvent;
+import com.muse.payments.payments.domain.PaymentRejectedInReviewEvent;
+import com.muse.payments.payments.domain.PaymentReleasedFromReviewEvent;
 import com.muse.payments.shared.application.IntegrationEvent;
 import com.muse.payments.shared.domain.DomainEvent;
 
@@ -19,18 +21,34 @@ public final class PaymentOutboxMapper {
     }
 
     public static IntegrationEvent toIntegrationEvent(DomainEvent event) {
-        if (event instanceof PaymentCreatedEvent created) {
+        if (event instanceof PaymentInitiatedEvent initiated) {
             return IntegrationEvent.create(
                     "Payment",
-                    created.paymentId(),
+                    initiated.paymentId(),
                     "PaymentCreated",
                     Map.of(
-                            "paymentId", created.paymentId(),
-                            "userId", created.userId(),
-                            "amount", created.amount(),
-                            "currency", created.currency(),
+                            "paymentId", initiated.paymentId(),
+                            "userId", initiated.userId(),
+                            "amount", initiated.amount(),
+                            "currency", initiated.currency(),
                             "status", "PENDING",
-                            "description", text(created.description())
+                            "description", text(initiated.description())
+                    ),
+                    Map.of("aggregateType", "Payment")
+            );
+        }
+        if (event instanceof PaymentReleasedFromReviewEvent released) {
+            return IntegrationEvent.create(
+                    "Payment",
+                    released.paymentId(),
+                    "PaymentCreated",
+                    Map.of(
+                            "paymentId", released.paymentId(),
+                            "userId", released.userId(),
+                            "amount", released.amount(),
+                            "currency", released.currency(),
+                            "status", "PENDING",
+                            "description", text(released.description())
                     ),
                     Map.of("aggregateType", "Payment")
             );
@@ -73,6 +91,19 @@ public final class PaymentOutboxMapper {
                             "paymentId", cancelled.paymentId(),
                             "userId", cancelled.userId(),
                             "reason", text(OutboundText.limit(cancelled.reason()))
+                    ),
+                    Map.of("aggregateType", "Payment")
+            );
+        }
+        if (event instanceof PaymentRejectedInReviewEvent rejected) {
+            return IntegrationEvent.create(
+                    "Payment",
+                    rejected.paymentId(),
+                    "PaymentCancelled",
+                    Map.of(
+                            "paymentId", rejected.paymentId(),
+                            "userId", rejected.userId(),
+                            "reason", text(OutboundText.limit(rejected.reason()))
                     ),
                     Map.of("aggregateType", "Payment")
             );

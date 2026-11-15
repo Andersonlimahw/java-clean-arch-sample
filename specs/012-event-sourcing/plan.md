@@ -2,7 +2,7 @@
 
 ## Principles
 
-- One increment per PR, in order 0 → 6. Each leaves `main` releasable with the public contract unchanged (except the history endpoint in increment 2).
+- Increment 0 is delivered; owner update (2026-11-15): increments 1–6 ship together in one implementation PR. Preserve the public contract except the history endpoint. Final ancillary corrections may be committed directly to main as authorized, after local validation.
 - Domain stays pure: events are records in `<module>.domain`; serialization, registry, and upcasters live in `shared.infrastructure.eventstore`.
 - No new framework (Axon, EventStoreDB). PostgreSQL + JDBC, as the outbox and idempotency store already do.
 

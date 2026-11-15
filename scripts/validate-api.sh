@@ -153,6 +153,38 @@ request confirm-payment 200 \
   -H "Authorization: Bearer $TOKEN" \
   "$BASE_URL/api/v1/payments/$PAYMENT_ID/confirm"
 
+history_found=0
+history_deadline=$((SECONDS + NOTIFY_TIMEOUT_SECONDS))
+while (( SECONDS < history_deadline )); do
+  code="$(http_code 0 "$WORKDIR/history.body" \
+    -H "Authorization: Bearer $TOKEN" \
+    "$BASE_URL/api/v1/payments/$PAYMENT_ID/history")"
+  if [[ "$code" != "200" ]]; then
+    echo "FAIL payment-history: expected HTTP 200, got $code" >&2
+    if [[ -s "$WORKDIR/history.body" ]]; then
+      cat "$WORKDIR/history.body" >&2
+    fi
+    exit 1
+  fi
+  if python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); items=data["items"]; sys.exit(0 if [e["eventType"] for e in items]==["payments.payment-initiated","payments.payment-completed"] and [e["status"] for e in items]==["PENDING","COMPLETED"] and data["totalElements"]==2 else 1)' \
+      "$WORKDIR/history.body"; then
+    history_found=1
+    break
+  fi
+  if (( SECONDS + 1 >= history_deadline )); then
+    break
+  fi
+  sleep 1
+done
+if [[ "$history_found" != "1" ]]; then
+  echo "FAIL payment-history: expected PaymentInitiated and PaymentCompleted within ${NOTIFY_TIMEOUT_SECONDS}s" >&2
+  if [[ -s "$WORKDIR/history.body" ]]; then
+    cat "$WORKDIR/history.body" >&2
+  fi
+  exit 1
+fi
+echo "OK   payment-history HTTP 200 (PaymentInitiated + PaymentCompleted present)"
+
 request unknown-payment 404 \
   -H "Authorization: Bearer $TOKEN" \
   "$BASE_URL/api/v1/payments/00000000-0000-0000-0000-000000000000"
