@@ -1,7 +1,7 @@
 ---
 title: HTTP API
 status: active
-updated: 2026-11-13
+updated: 2026-11-15
 related: [architecture.md, rules/api-auth-context.md, testing.md]
 ---
 
@@ -21,6 +21,7 @@ For protected endpoints, use Swagger UI's **Authorize** control or send `Authori
 | `POST` | `/api/v1/auth/logout` | Public | Revokes the presented refresh-token family; body may be absent; returns `204`. |
 | `POST` | `/api/v1/payments` | `USER` or `ADMIN` | Creates a payment owned by the caller; requires `Idempotency-Key`; returns `201` or `422` for an explicit fraud decline. |
 | `GET` | `/api/v1/payments/{id}` | `USER`, `ADMIN`, or `FRAUD_REVIEWER` | Owner can read their payment. `ADMIN` and `FRAUD_REVIEWER` can read any payment. |
+| `GET` | `/api/v1/payments/{id}/history` | `USER`, `ADMIN`, or `FRAUD_REVIEWER` | Owner, `ADMIN`, or `FRAUD_REVIEWER` can read the immutable payment event timeline from `payment_history`. Returns `404` when absent or hidden from non-owner `USER`. |
 | `GET` | `/api/v1/payments` | `USER` or `ADMIN` | Lists only the caller's payments. `ADMIN` remains owner-scoped here. Supports the pagination and sort contract below. |
 | `GET` | `/api/v1/payments/under-review` | `ADMIN` or `FRAUD_REVIEWER` | Lists payments held for review. Supports the same pagination and sort contract. |
 | `POST` | `/api/v1/payments/{id}/confirm` | `USER` or `ADMIN`, payment owner | Confirms a `PENDING` payment; returns `200`. A non-owner receives `404`, including an `ADMIN`. |

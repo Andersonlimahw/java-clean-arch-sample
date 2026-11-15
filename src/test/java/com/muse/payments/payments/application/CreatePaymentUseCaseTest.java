@@ -115,28 +115,6 @@ class CreatePaymentUseCaseTest {
         public Optional<com.muse.payments.payments.domain.Payment> findById(UUID id) {
             return Optional.empty();
         }
-
-        @Override
-        public List<com.muse.payments.payments.domain.Payment> findByUserId(
-                UUID userId, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
-            return List.of();
-        }
-
-        @Override
-        public long countByUserId(UUID userId) {
-            return 0;
-        }
-
-        @Override
-        public List<com.muse.payments.payments.domain.Payment> findByStatus(
-                com.muse.payments.payments.domain.PaymentStatus status, int page, int size, com.muse.payments.payments.domain.PaymentSort sort) {
-            return List.of();
-        }
-
-        @Override
-        public long countByStatus(com.muse.payments.payments.domain.PaymentStatus status) {
-            return 0;
-        }
     }
 
     private static final class RecordingOutbox implements OutboxPort {

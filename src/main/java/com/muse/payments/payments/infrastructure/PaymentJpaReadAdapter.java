@@ -1,32 +1,27 @@
 package com.muse.payments.payments.infrastructure;
 
+import com.muse.payments.payments.application.PaymentReadRepository;
 import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentSort;
 import com.muse.payments.payments.domain.PaymentStatus;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-@Component
-public class PaymentJpaAdapter implements PaymentRepository {
+@Repository
+@Transactional(readOnly = true)
+public class PaymentJpaReadAdapter implements PaymentReadRepository {
 
     private final PaymentJpaRepository paymentJpaRepository;
 
-    public PaymentJpaAdapter(PaymentJpaRepository paymentJpaRepository) {
+    public PaymentJpaReadAdapter(PaymentJpaRepository paymentJpaRepository) {
         this.paymentJpaRepository = Objects.requireNonNull(paymentJpaRepository);
-    }
-
-    @Override
-    public Payment save(Payment payment) {
-        PaymentJpaEntity entity = PaymentJpaEntity.fromDomain(payment);
-        PaymentJpaEntity saved = paymentJpaRepository.saveAndFlush(entity);
-        return saved.toDomain();
     }
 
     @Override

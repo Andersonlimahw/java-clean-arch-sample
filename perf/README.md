@@ -21,7 +21,7 @@ Compose starts PostgreSQL 16, Redis 7, RabbitMQ 3.13, and the app. `SPRING_PROFI
 
 ## Seed
 
-`perf/seed-payments.sh` needs `curl` and `docker compose`. It does not need host `psql` or host `python`. Register goes through the API. The rows are inserted with `docker compose exec` into Postgres, bypassing payment create, then `ANALYZE payments` runs. Default is 10000 rows for the registered user (mixed status, paired `created_at`) and 20000 rows for other users.
+`perf/seed-payments.sh` needs `curl` and Compose (`docker compose` or `docker-compose`). Register goes through the API. One SQL transaction inserts authoritative initiated/completed/cancelled facts and the matching synchronous payment projection, bypassing fraud screening and outbox traffic, then runs `ANALYZE payments`. Rebuild preserves the dataset. Default is 10000 rows for the registered user (mixed status, paired `created_at`) and 20000 rows for other users. `COMPOSE_FILE` selects an isolated stack; use `BASE_URL` and `K6_NETWORK` for its ports/network.
 
 ```bash
 ROWS=10000 OTHER_ROWS=20000 ./perf/seed-payments.sh

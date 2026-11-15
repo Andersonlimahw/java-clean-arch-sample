@@ -9,12 +9,12 @@ related: [api.md, data.md, messaging.md, adr/0014-web-boundary-and-strict-local-
 
 One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 25.
 Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel. Open means a Spring Modulith module of type `OPEN`: the other modules may depend on it. It holds ports and cross-cutting types, not payment rules.
-Increment 0 installs the shared event-store kernel and schema. Existing aggregate writes still use their current adapters until later increments switch each module; this change alone does not make the event stream the active writer.
+The event store is the active source of truth for every domain aggregate. Command repositories replay streams; query adapters read projections.
 The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md).
 
 ## Event-store kernel flow
 
-Increment 0 installs these ports and adapters; module handlers switch to them in later increments. Event append, synchronous projection, and outbox writes then share one database transaction.
+All domain aggregates (`Payment`, `User`, `RefreshTokenFamily`, `Notification`) append domain events to `event_store` via `EventStore` (`JdbcEventStore`). Event append, synchronous projections (`payments`, `users`, `refresh_tokens`), and outbox writes share one database transaction. Asynchronous projections (`payment_history`, `notifications`) tail `event_store` in `global_position` order using `xid8` transaction visibility filtering and `projection_checkpoints`.
 
 ```mermaid
 flowchart LR
@@ -22,9 +22,9 @@ flowchart LR
     Aggregate -->|uncommitted domain events| StorePort[EventStore port]
     StorePort --> JdbcStore[JdbcEventStore]
     JdbcStore -->|same transaction| EventLog[(event_store)]
-    Command -->|same transaction, later increments| Projector[SyncProjector]
+    Command -->|same transaction| Projector[SyncProjector]
     Command -->|same transaction| Outbox[OutboxPort]
-    EventLog -->|global position order, later increments| Async[Async projections]
+    EventLog -->|global position order, xid8| Async[AsyncProjector]
     Command -.-> SnapshotPort[SnapshotStore port]
     SnapshotPort --> JdbcSnapshot[JdbcSnapshotStore]
     JdbcSnapshot --> Snapshots[(snapshots)]
@@ -90,14 +90,14 @@ C4Component
         Component(useCase, "CreatePaymentUseCase", "Application service", "Coordinates idempotency, screening, payment creation, and event recording")
         Component(payment, "Payment", "Domain aggregate", "Owns payment state transitions")
         Component(paymentPort, "PaymentRepository", "Domain port", "Payment persistence contract")
-        Component(paymentAdapter, "PaymentJpaAdapter", "JPA adapter", "Maps payments to PostgreSQL")
+        Component(paymentAdapter, "EventSourcedPaymentRepository", "Event store adapter", "Appends facts and synchronously projects payments")
         Component(fraudPort, "FraudScreeningPort", "Application port", "Screening contract")
         Component(fraudAdapter, "HttpFraudScreeningAdapter", "Resilience4j and Spring RestClient", "Calls the fraud provider with bounded retries and concurrency")
         Component(outboxPort, "OutboxPort", "Application port", "Records integration events with the aggregate transaction")
         Component(outboxAdapter, "OutboxJpaAdapter", "JPA adapter", "Persists outbox rows")
         Component(relay, "OutboxRelayService", "Scheduled infrastructure service", "Claims events and publishes with publisher confirms")
         Component(consumer, "PaymentNotificationConsumer", "RabbitMQ listener", "Deduplicates events and creates notifications")
-        Component(notificationAdapter, "NotificationJpaAdapter", "JPA adapter", "Persists notifications")
+        Component(notificationAdapter, "EventSourcedNotificationRepository", "Event store adapter", "Records notification facts for async projection")
     }
     ComponentDb_Ext(database, "PostgreSQL", "PostgreSQL 16", "Payments, outbox, processed-event, and notification tables")
     ComponentQueue_Ext(broker, "RabbitMQ", "RabbitMQ 3.13", "Payment event exchange, notification queue, and DLQ")
@@ -133,7 +133,7 @@ The code uses `domain`, `application`, `web`, and `infrastructure` packages. The
 
 Dependencies point inward: web and infrastructure code may call application contracts and domain rules; domain code stays independent of framework and transport packages. `ArchitectureTest` checks domain purity, and `ModularityTest` checks Spring Modulith module boundaries. The `shared` module is deliberately open for cross-cutting ports and types; it does not own payment business rules.
 
-Commands change state and may append integration events in the same transaction. Queries return read-only results and do not mutate aggregates. Payment and identity use application handlers; identity currently has no query types. Notifications currently has no application package: its controller calls `NotificationRepository`, while its consumer persists delivered events. CQRS here does not mean event sourcing; see [ADR 0004](adr/0004-cqrs-without-event-sourcing.md).
+Commands replay facts, validate transitions and append new facts. Synchronous projectors and the integration outbox share that transaction. Queries read projections; notification listing goes through its application handler. Password hashes remain separate credential state. [ADR 0016](adr/0016-event-sourcing-with-hybrid-projections.md) supersedes ADR 0004.
 
 ## Module map
 
@@ -322,16 +322,18 @@ Production types take dependencies by constructor. The field-injection rule does
 ## Data model
 
 Selected columns. The Flyway scripts are the full schema.
-The shared event-store kernel is installed in V1, but current payment, identity, and notification handlers continue writing through their existing adapters until their later increments switch them.
+All aggregate writers use the event store. State tables below are projections except credentials. See [data.md](data.md) for fence/checkpoint safety, snapshots and offline rebuild commands.
 
 ```mermaid
 erDiagram
-    USERS ||--o{ REFRESH_TOKENS : "identity FK"
     USERS {
         uuid id PK
         string email UK
-        string password_hash
         string roles
+    }
+    USER_CREDENTIALS {
+        uuid user_id PK
+        string password_hash
     }
     PAYMENTS {
         uuid id PK

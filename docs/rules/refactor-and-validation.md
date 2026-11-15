@@ -19,6 +19,10 @@ related: [../architecture.md, ../testing.md, ../../AGENTS.md]
 
 ## Refactor checklist
 
+- **Async checkpoint safety**: Test inverted transaction-ID/position allocation and out-of-order commits before advancing a positional checkpoint; an xmin payload filter alone is insufficient. Verify with `AsyncProjectionIT`.
+- **Independent projection rebuilds**: Preserve credential state and sibling projections during rebuild; never cascade truncation across read models. Verify with `ProjectionRebuildIT`.
+- **Shared auth test isolation**: Reset only auth-rate buckets between tests sharing Redis, retaining production limits and all unrelated fixtures. Verify with the full `mvn -B clean verify` suite.
+
 - Preserve domain purity and constructor injection.
 - Add a regression test for every corrected behavior or boundary.
 - Keep API response records in the application layer; do not expose domain objects from web adapters.

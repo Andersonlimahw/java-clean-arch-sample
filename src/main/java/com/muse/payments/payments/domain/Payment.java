@@ -1,27 +1,32 @@
 package com.muse.payments.payments.domain;
 
-import com.muse.payments.shared.domain.AggregateRoot;
 import com.muse.payments.shared.domain.ConflictException;
+import com.muse.payments.shared.domain.DomainEvent;
+import com.muse.payments.shared.domain.EventSourcedAggregate;
 import com.muse.payments.shared.domain.ForbiddenException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-public class Payment extends AggregateRoot<UUID> {
+public class Payment extends EventSourcedAggregate<UUID> {
 
-    private final UUID id;
-    private final UUID userId;
-    private final Money money;
-    private final String description;
+    private UUID id;
+    private UUID userId;
+    private Money money;
+    private String description;
     private PaymentStatus status;
-    private final Instant createdAt;
+    private Instant createdAt;
     private Instant updatedAt;
-    private Long version;
+    private Long projectionVersion;
     private String screeningReason;
-    private final String heldReason;
+    private String heldReason;
     private UUID reviewerId;
     private Instant reviewedAt;
+
+    private Payment() {
+    }
 
     private Payment(
             UUID id,
@@ -31,7 +36,7 @@ public class Payment extends AggregateRoot<UUID> {
             PaymentStatus status,
             Instant createdAt,
             Instant updatedAt,
-            Long version,
+            Long projectionVersion,
             String screeningReason,
             String heldReason,
             UUID reviewerId,
@@ -44,7 +49,7 @@ public class Payment extends AggregateRoot<UUID> {
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
-        this.version = version;
+        this.projectionVersion = projectionVersion;
         this.screeningReason = screeningReason;
         this.heldReason = heldReason;
         this.reviewerId = reviewerId;
@@ -56,7 +61,12 @@ public class Payment extends AggregateRoot<UUID> {
     }
 
     public static Payment create(UUID id, UUID userId, Money money, String description) {
-        return cleared(id, userId, money, description);
+        Objects.requireNonNull(id, "Payment id must not be null");
+        Objects.requireNonNull(userId, "userId must not be null");
+        Objects.requireNonNull(money, "money must not be null");
+        Payment payment = new Payment();
+        payment.raise(new PaymentInitiatedEvent(id, userId, money.amount(), money.currency(), description));
+        return payment;
     }
 
     /**
@@ -64,22 +74,16 @@ public class Payment extends AggregateRoot<UUID> {
      * who does not own the payment releases it. The owner may cancel it.
      */
     public static Payment createUnderReview(UUID id, UUID userId, Money money, String description, String reason) {
-        return held(id, userId, money, description, reason);
-    }
-
-    private static Payment cleared(UUID id, UUID userId, Money money, String description) {
-        Instant now = Instant.now();
-        Payment payment = new Payment(id, userId, money, description, PaymentStatus.PENDING, now, now, null, null, null, null, null);
-        payment.registerEvent(new PaymentCreatedEvent(id, userId, money.amount(), money.currency(), description));
+        Objects.requireNonNull(id, "Payment id must not be null");
+        Objects.requireNonNull(userId, "userId must not be null");
+        Objects.requireNonNull(money, "money must not be null");
+        Payment payment = new Payment();
+        payment.raise(new PaymentHeldForReviewEvent(id, userId, money.amount(), money.currency(), description, reason));
         return payment;
     }
 
-    private static Payment held(UUID id, UUID userId, Money money, String description, String reason) {
-        Instant now = Instant.now();
-        Payment payment = new Payment(id, userId, money, description, PaymentStatus.UNDER_REVIEW, now, now, null, reason, reason, null, null);
-        payment.registerEvent(new PaymentHeldForReviewEvent(
-                id, userId, money.amount(), money.currency(), description, reason));
-        return payment;
+    public static Payment rehydrate(List<? extends DomainEvent> history) {
+        return EventSourcedAggregate.rehydrate(Payment::new, history);
     }
 
     public static Payment rehydrate(
@@ -105,22 +109,16 @@ public class Payment extends AggregateRoot<UUID> {
      */
     public void releaseFromReview(UUID reviewerId, Instant reviewedAt) {
         requireHeld(reviewerId);
-        this.status = PaymentStatus.PENDING;
-        this.screeningReason = null;
-        this.reviewerId = Objects.requireNonNull(reviewerId, "reviewerId must not be null");
-        this.reviewedAt = Objects.requireNonNull(reviewedAt, "reviewedAt must not be null");
-        this.updatedAt = reviewedAt;
-        registerEvent(new PaymentCreatedEvent(this.id, this.userId, this.money.amount(), this.money.currency(), this.description));
+        Objects.requireNonNull(reviewedAt, "reviewedAt must not be null");
+        raise(new PaymentReleasedFromReviewEvent(
+                this.id, this.userId, this.money.amount(), this.money.currency(), this.description, reviewerId, reviewedAt));
     }
 
     /** A reviewer who does not own the payment cancels it. {@code reason} is the reviewer's reason. */
     public void rejectFromReview(UUID reviewerId, Instant reviewedAt, String reason) {
         requireHeld(reviewerId);
-        this.status = PaymentStatus.CANCELLED;
-        this.reviewerId = Objects.requireNonNull(reviewerId, "reviewerId must not be null");
-        this.reviewedAt = Objects.requireNonNull(reviewedAt, "reviewedAt must not be null");
-        this.updatedAt = reviewedAt;
-        registerEvent(new PaymentCancelledEvent(this.id, this.userId, reason));
+        Objects.requireNonNull(reviewedAt, "reviewedAt must not be null");
+        raise(new PaymentRejectedInReviewEvent(this.id, this.userId, reviewerId, reason, reviewedAt));
     }
 
     private void requireHeld(UUID reviewerId) {
@@ -139,18 +137,74 @@ public class Payment extends AggregateRoot<UUID> {
         if (this.status != PaymentStatus.PENDING) {
             throw new ConflictException("Cannot complete payment in status: " + this.status);
         }
-        this.status = PaymentStatus.COMPLETED;
-        this.updatedAt = Instant.now();
-        registerEvent(new PaymentCompletedEvent(this.id, this.userId));
+        raise(new PaymentCompletedEvent(this.id, this.userId));
     }
 
     public void cancel(String reason) {
         if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.UNDER_REVIEW) {
             throw new ConflictException("Cannot cancel payment in status: " + this.status);
         }
-        this.status = PaymentStatus.CANCELLED;
-        this.updatedAt = Instant.now();
-        registerEvent(new PaymentCancelledEvent(this.id, this.userId, reason));
+        raise(new PaymentCancelledEvent(this.id, this.userId, reason));
+    }
+
+    @Override
+    protected void apply(DomainEvent event) {
+        switch (event) {
+            case PaymentInitiatedEvent e -> {
+                this.id = e.paymentId();
+                this.userId = e.userId();
+                this.money = Money.of(e.amount(), e.currency());
+                this.description = e.description();
+                this.status = PaymentStatus.PENDING;
+                this.createdAt = e.occurredAt();
+                this.updatedAt = e.occurredAt();
+                this.screeningReason = null;
+                this.heldReason = null;
+                this.reviewerId = null;
+                this.reviewedAt = null;
+                this.projectionVersion = null;
+            }
+            case PaymentHeldForReviewEvent e -> {
+                this.id = e.paymentId();
+                this.userId = e.userId();
+                this.money = Money.of(e.amount(), e.currency());
+                this.description = e.description();
+                this.status = PaymentStatus.UNDER_REVIEW;
+                this.createdAt = e.occurredAt();
+                this.updatedAt = e.occurredAt();
+                this.screeningReason = e.reason();
+                this.heldReason = e.reason();
+                this.reviewerId = null;
+                this.reviewedAt = null;
+                this.projectionVersion = null;
+            }
+            case PaymentReleasedFromReviewEvent e -> {
+                this.status = PaymentStatus.PENDING;
+                this.screeningReason = null;
+                this.reviewerId = e.reviewerId();
+                this.reviewedAt = e.occurredAt();
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            case PaymentRejectedInReviewEvent e -> {
+                this.status = PaymentStatus.CANCELLED;
+                this.reviewerId = e.reviewerId();
+                this.reviewedAt = e.occurredAt();
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            case PaymentCompletedEvent e -> {
+                this.status = PaymentStatus.COMPLETED;
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            case PaymentCancelledEvent e -> {
+                this.status = PaymentStatus.CANCELLED;
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            default -> throw new IllegalArgumentException("Unsupported payment event: " + event.getClass().getName());
+        }
     }
 
     public boolean isOwnedBy(UUID requestingUserId) {
@@ -187,7 +241,10 @@ public class Payment extends AggregateRoot<UUID> {
     }
 
     public Long getVersion() {
-        return version;
+        if (projectionVersion != null) {
+            return projectionVersion;
+        }
+        return version() == 0 ? null : version() - 1;
     }
 
     public String getScreeningReason() {

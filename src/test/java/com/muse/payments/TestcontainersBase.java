@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * The broker is static and shared by every Spring test in the JVM. A context left open
@@ -18,9 +19,18 @@ public abstract class TestcontainersBase extends SharedContainers {
     @Autowired
     private ObjectProvider<ControllableFraudScreening> fraudScreening;
 
+    @Autowired
+    private ObjectProvider<StringRedisTemplate> redisTemplate;
+
     @BeforeEach
     void resetFraudScreeningBefore() {
         fraudScreening.ifAvailable(ControllableFraudScreening::reset);
+        // Containers are shared across contexts; auth budgets belong to each test.
+        // Clear only test auth buckets, preserving cache and idempotency fixtures.
+        redisTemplate.ifAvailable(redis -> {
+            var keys = redis.keys("ratelimit:auth:*");
+            if (keys != null && !keys.isEmpty()) redis.delete(keys);
+        });
     }
 
     @AfterEach

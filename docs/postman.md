@@ -39,7 +39,7 @@ Execute a collection inteira no Runner, em ordem, com **Keep variable values** h
 | 06 · Fraud Review & Compliance (Optional) | Opcional; desabilitada por padrão (`runFraudReview=false`). Quando habilitada, lista os pagamentos em revisão (alimentados automaticamente pelas etapas 09 e 10 da pasta 03), aprova o primeiro (`PENDING`) e rejeita o segundo (`CANCELLED`). Exige token de revisor (`ADMIN` ou `FRAUD_REVIEWER`). |
 | 07 · Session Teardown & Logout | Logout `204` e tentativa de refresh com token revogado `401`. Execute por último. |
 
-Os scripts verificam status, Content-Type, schemas de payload (JSON Schema Draft-07), propriedade dos recursos, estados de pagamento, replay de idempotência e rotação de tokens. As respostas `204` devem ter corpo vazio. Valores só são capturados em respostas de sucesso com os campos esperados.
+Os scripts verificam status, Content-Type, schemas de payload (JSON Schema Draft-07), propriedade dos recursos, estados de pagamento, replay de idempotência e rotação de tokens. A etapa 03.06b consulta o histórico paginado, aguarda até dez ciclos de 1s e exige os eventos de criação e confirmação em ordem, com ator e estado corretos. As respostas `204` devem ter corpo vazio. Valores só são capturados em respostas de sucesso com os campos esperados.
 
 ## Variáveis preservadas
 

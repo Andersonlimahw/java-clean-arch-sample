@@ -59,7 +59,7 @@ public class PaymentNotificationConsumer {
             if (eventTypeHeader == null || eventTypeHeader.isBlank()) {
                 throw new AmqpRejectAndDontRequeueException("Permanent failure: missing event type");
             }
-            Notification notification = toNotification(eventTypeHeader, data);
+            Notification notification = toNotification(eventTypeHeader, data, eventId);
 
             boolean isNewEvent = processedEventStore.tryMarkProcessed(CONSUMER_NAME, eventId);
             if (!isNewEvent) {
@@ -95,7 +95,7 @@ public class PaymentNotificationConsumer {
         }
     }
 
-    private Notification toNotification(String eventType, Map<String, Object> data) {
+    private Notification toNotification(String eventType, Map<String, Object> data, UUID sourceEventId) {
         UUID paymentId = requiredUuid(data, "paymentId");
         UUID userId = requiredUuid(data, "userId");
         return switch (eventType) {
@@ -103,19 +103,22 @@ public class PaymentNotificationConsumer {
                     userId,
                     paymentId,
                     requiredDecimal(data, "amount"),
-                    requiredText(data, "currency")
+                    requiredText(data, "currency"),
+                    sourceEventId
             );
             case "PaymentHeldForReview" -> Notification.paymentHeldForReview(
                     userId,
                     paymentId,
                     requiredDecimal(data, "amount"),
-                    requiredText(data, "currency")
+                    requiredText(data, "currency"),
+                    sourceEventId
             );
-            case "PaymentCompleted" -> Notification.paymentCompleted(userId, paymentId);
+            case "PaymentCompleted" -> Notification.paymentCompleted(userId, paymentId, sourceEventId);
             case "PaymentCancelled" -> Notification.paymentCancelled(
                     userId,
                     paymentId,
-                    data.get("reason") == null ? "" : data.get("reason").toString()
+                    data.get("reason") == null ? "" : data.get("reason").toString(),
+                    sourceEventId
             );
             default -> throw new AmqpRejectAndDontRequeueException("Permanent failure: unsupported event type " + eventType);
         };

@@ -2,7 +2,6 @@ package com.muse.payments.payments.application;
 
 import com.muse.payments.payments.domain.Money;
 import com.muse.payments.payments.domain.Payment;
-import com.muse.payments.payments.domain.PaymentRepository;
 import com.muse.payments.payments.domain.PaymentSort;
 import com.muse.payments.payments.domain.PaymentStatus;
 import com.muse.payments.shared.domain.ValidationException;
@@ -146,17 +145,12 @@ class ListPaymentsQueryHandlerTest {
         );
     }
 
-    private static final class RecordingRepository implements PaymentRepository {
+    private static final class RecordingRepository implements PaymentReadRepository {
 
         private final List<Integer> requestedSizes = new ArrayList<>();
         private final List<PaymentSort> requestedSorts = new ArrayList<>();
         private List<Payment> rows = List.of();
         private long total;
-
-        @Override
-        public Payment save(Payment payment) {
-            throw new UnsupportedOperationException();
-        }
 
         @Override
         public Optional<Payment> findById(UUID id) {

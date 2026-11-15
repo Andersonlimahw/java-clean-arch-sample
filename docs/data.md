@@ -17,11 +17,13 @@ PostgreSQL is the system of record. Flyway migrations run in version order from 
 | V2 | `V2__identity.sql` | Creates `users` and `refresh_tokens`; `refresh_tokens.user_id` references `users.id` with cascade delete. |
 | V3 | `V3__payments.sql` | Creates `payments` with current screening and review columns, optimistic version, and the owner-scoped list index. |
 | V4 | `V4__notifications.sql` | Creates `notifications`. Its `user_id` and `payment_id` are UUID columns without cross-module foreign keys. |
-| V5–V7 | Consolidated into V1 and V3 | The lease ID and screening columns move into the initial table definitions. The current payment-list index is created normally on an empty database. |
+| V5 | `V5__payment_history.sql` | Creates the asynchronous payment timeline. |
+| V6 | `V6__user_credentials.sql` | Separates password hashes from user facts and the user projection. |
+| V7 | `V7__independent_identity_projections.sql` | Removes the refresh-token-to-user read-model FK so each projection rebuilds independently. |
 
 These migrations replace the former V1–V7 history for the clean-database Event Sourcing rollout. The local reset script removes the old schema and replays the consolidated migrations; it does not backfill existing rows.
 
-There are no foreign keys from `payments` or `notifications` into the identity module. The identity refresh-token foreign key stays within identity.
+There are no cross-module foreign keys. V7 removes the original intra-module refresh-token FK; rebuilding `users` preserves both `refresh_tokens` and the non-rebuildable `user_credentials` state table.
 
 ## Indexes and constraints
 
@@ -50,9 +52,23 @@ Primary-key and unique-constraint indexes are listed because they also affect lo
 
 ## Event store kernel
 
-`event_store` is the append-only log planned as the system of record. Each row stores a stable registered event name, schema version, JSON payload and metadata, with a 1-based stream version and global position. `JdbcEventStore` takes a transaction-scoped advisory lock per stream, verifies that the expected version equals the current version, then appends; the unique constraint is a backstop against duplicate stream versions. This rejects stale and ahead-of-stream appends without gaps. A trigger rejects `UPDATE` and `DELETE`; corrections must be new events.
+`event_store` is the source of truth for Payment, User, RefreshTokenFamily and Notification. Each row stores a stable registered event name, schema version, JSON payload and metadata, with a 1-based stream version and global position. `JdbcEventStore` takes a transaction-scoped advisory lock per stream, verifies the expected version, allocates an XID before reserving positions and appends. The unique constraint prevents duplicate versions; a trigger rejects `UPDATE` and `DELETE`.
 
-`snapshots` and `projection_checkpoints` are infrastructure tables. Snapshots are disposable and are ignored when their schema version is not current. At this increment, the kernel is installed but existing aggregate handlers still use their current writers; later increments switch each module separately.
+`snapshots` and `projection_checkpoints` are infrastructure tables. Refresh-token families take disposable snapshots every 50 events by default (`app.event-store.snapshot-every`); stale schemas trigger full replay. Password hashes live only in `user_credentials`, committed atomically with registration. Login reads users plus credentials without aggregate replay; hashing remains outside database transactions.
+
+## Projection runtime and rebuild
+
+`payments`, `users`, and `refresh_tokens` update synchronously in the append transaction. `payment_history` and `notifications` update asynchronously in checkpointed batches. Each batch locks its checkpoint with `FOR UPDATE SKIP LOCKED`, applies events and advances progress atomically.
+
+Position allocation can differ from transaction-ID order. The runner captures a sequence horizon, allocates a subsequent fence XID, waits until `pg_snapshot_xmin(pg_current_snapshot())` reaches that fence, and only processes positions up to the horizon (also filtering transaction IDs by xmin). This prevents invisible lower positions being skipped even when an older transaction appends later. Rollbacks may leave harmless sequence gaps. A long transaction delays projection progress; `projection.lag{projection}` exposes that delay. See [PostgreSQL snapshot semantics](https://www.postgresql.org/docs/16/functions-info.html).
+
+With every app replica and consumer stopped, run a rebuild against the same database:
+
+```bash
+APP_PROJECTION_REBUILD=payment_history mvn -B spring-boot:run
+```
+
+Names: `payments`, `users`, `refresh_tokens`, `payment_history`, `notifications`. The process serves no HTTP, starts no consumers or schedulers, rebuilds one projection transactionally and exits. Unknown targets fail. Keep writers stopped throughout; rebuild does not publish integration events or reset credentials. Never rebuild `user_credentials`: it is state, not a projection. Restore the app afterwards. Rebuild payments offline also requires clearing the payment cache if its contents were independently corrupted.
 
 ## Resetting the local database
 
@@ -80,7 +96,7 @@ Safety: it refuses a `DB_URL` host other than `localhost`, `127.0.0.1`, `::1`, `
 
 ## Implementation references
 
-- Migration SQL: `src/main/resources/db/migration/V1__shared.sql` through `V4__notifications.sql`.
+- Migration SQL: `src/main/resources/db/migration/V1__shared.sql` through `V7__independent_identity_projections.sql` (new V5–V7 after the one-time rewrite).
 - Event-store kernel and adapters: `src/main/java/com/muse/payments/shared/domain/EventSourcedAggregate.java`, `src/main/java/com/muse/payments/shared/application/EventStore.java`, and `src/main/java/com/muse/payments/shared/infrastructure/eventstore/`.
 - Runtime Flyway lock setting: `src/main/resources/application.yml`.
 - Payment list and held-payment queries: `src/main/java/com/muse/payments/payments/application/ListPaymentsQueryHandler.java`, `src/main/java/com/muse/payments/payments/application/ListHeldPaymentsQueryHandler.java`, and `src/main/java/com/muse/payments/payments/infrastructure/PaymentJpaRepository.java`.
@@ -93,4 +109,4 @@ rtk mvn -q -Dtest=MigrationOnlyModeTest,JavaVersionPinsTest test
 DB_URL=jdbc:postgresql://db.example.com:5432/payments DB_PASSWORD=x scripts/db-reset.sh --yes; echo $?
 ```
 
-Expected result: migration-only startup and version pins remain valid; Flyway applies exactly V1–V4 on a clean PostgreSQL 16 database, and the reset script refuses the non-local host with exit code `1`.
+Expected result: migration-only startup and version pins remain valid; Flyway applies V1–V7 on a clean PostgreSQL 16 database, and the reset script refuses the non-local host with exit code `1`. `AsyncProjectionIT` checks inverted XID/position ordering and restart; `ProjectionRebuildIT` checks all five projections and preservation of credentials/tokens.

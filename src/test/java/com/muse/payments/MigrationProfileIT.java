@@ -31,7 +31,7 @@ class MigrationProfileIT extends TestcontainersBase {
     void flywayRunsWithoutConsumers() {
         assertThat(flyway.info().applied())
                 .extracting(migration -> migration.getVersion().getVersion())
-                .containsExactly("1", "2", "3", "4");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7");
         assertThat(flyway.info().pending()).isEmpty();
         assertThat(listenerRegistry.getListenerContainers()).isNotEmpty();
         assertThat(listenerRegistry.getListenerContainers()).allSatisfy(container -> {

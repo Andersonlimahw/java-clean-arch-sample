@@ -1,5 +1,6 @@
 package com.muse.payments;
 
+import com.muse.payments.shared.application.ProjectionRebuildPort;
 import org.flywaydb.core.Flyway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,12 +35,21 @@ public class PaymentsApplication {
             "spring.main.web-application-type", "none",
             "spring.rabbitmq.listener.simple.auto-startup", "false",
             "app.outbox.scheduling.enabled", "false",
+            "app.projections.scheduling.enabled", "false",
+            "spring.modulith.moments.enabled", "false"
+    );
+
+    private static final Map<String, Object> REBUILD_OVERRIDES = Map.of(
+            "spring.main.web-application-type", "none",
+            "spring.rabbitmq.listener.simple.auto-startup", "false",
+            "app.outbox.scheduling.enabled", "false",
+            "app.projections.scheduling.enabled", "false",
             "spring.modulith.moments.enabled", "false"
     );
 
     public static void main(String[] args) {
         ApplicationLaunch launch = launch(args);
-        if (launch.migrationOnly()) {
+        if (launch.migrationOnly() || launch.context() == null) {
             System.exit(launch.exitCode());
         }
     }
@@ -54,16 +64,32 @@ public class PaymentsApplication {
     static ApplicationLaunch launch(String[] args) {
         SpringApplication application = new SpringApplication(PaymentsApplication.class);
         boolean migrationOnly = MigrationOnlyMode.enabled(args);
+        var rebuildTarget = ProjectionRebuildMode.target(args);
+        if (migrationOnly && rebuildTarget.isPresent()) {
+            throw new IllegalStateException("APP_MIGRATION_ONLY and APP_PROJECTION_REBUILD cannot be enabled together");
+        }
         if (migrationOnly) {
             application.setAdditionalProfiles("migration");
             application.setWebApplicationType(WebApplicationType.NONE);
             application.addListeners(new MigrationPropertyOverrides());
             log.info("Migration-only mode: Flyway will run and the process will exit");
+        } else if (rebuildTarget.isPresent()) {
+            application.setWebApplicationType(WebApplicationType.NONE);
+            application.addListeners((ApplicationListener<ApplicationEnvironmentPreparedEvent>) event ->
+                    event.getEnvironment().getPropertySources()
+                            .addFirst(new MapPropertySource("projectionRebuild", REBUILD_OVERRIDES)));
+            log.info("Projection-rebuild mode: rebuilding {} and exiting", rebuildTarget.get());
         }
         ConfigurableApplicationContext context = null;
         try {
             context = application.run(args);
             WebApplicationType webType = application.getWebApplicationType();
+            if (rebuildTarget.isPresent()) {
+                context.getBean(ProjectionRebuildPort.class).rebuild(rebuildTarget.get());
+                int code = SpringApplication.exit(context, () -> 0);
+                context = null;
+                return new ApplicationLaunch(false, code, webType, null);
+            }
             if (!migrationOnly) {
                 ConfigurableApplicationContext running = context;
                 context = null;
@@ -73,12 +99,12 @@ public class PaymentsApplication {
             context = null;
             return new ApplicationLaunch(true, code, webType, null);
         } catch (RuntimeException ex) {
-            if (!migrationOnly) {
+            if (!migrationOnly && rebuildTarget.isEmpty()) {
                 throw ex;
             }
-            log.error("Migration failed", ex);
+            log.error(migrationOnly ? "Migration failed" : "Projection rebuild failed", ex);
             closeQuietly(context);
-            return new ApplicationLaunch(true, 1, application.getWebApplicationType(), null);
+            return new ApplicationLaunch(migrationOnly, 1, application.getWebApplicationType(), null);
         }
     }
 

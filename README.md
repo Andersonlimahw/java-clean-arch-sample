@@ -2,7 +2,7 @@
 
 A production-grade **Payments Modular Monolith** built with **Java 25**, **Spring Boot 3.5.16**, **Spring Modulith**, **PostgreSQL 16**, **Redis 7**, and **RabbitMQ 3.13**.
 
-Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **CQRS**, and the **Transactional Outbox Pattern** to provide reliable, highly concurrent payment execution and event-driven notifications.
+Architecture follows **Domain-Driven Design (DDD)**, **Clean Architecture**, **CQRS + Event Sourcing**, and the **Transactional Outbox Pattern**. Payment, User, RefreshTokenFamily and Notification use PostgreSQL event streams as their source of truth, with hybrid projections and offline replay.
 
 ## Demo
 AI-assisted development: see [the universal skills and reviewer workflow](docs/ai-tooling.md), including `create-crud <resource>`, tests, local gate, Postman and Flyway. Canonical sources live in `.agents/`; harness entries point to them.
@@ -36,6 +36,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER`, `ROLE_ADM
 | `POST /api/v1/auth/**` | Public | — |
 | `POST /api/v1/payments` | `USER` or `ADMIN` | The caller owns the payment that is created |
 | `GET /api/v1/payments/{id}` | `USER`, `ADMIN`, or `FRAUD_REVIEWER` | Owner, or any payment when the caller is `ADMIN` or `FRAUD_REVIEWER`. Another user's payment is **404** for `USER` |
+| `GET /api/v1/payments/{id}/history` | `USER`, `ADMIN`, or `FRAUD_REVIEWER` | Same visibility as get-by-id; paged asynchronous timeline, briefly incomplete immediately after writes |
 | `GET /api/v1/payments` | `USER` or `ADMIN` | Always the caller's own payments, including for `ADMIN`. `page`/`size`/`sort` outside the documented bounds are **400** (they used to be clamped) |
 | `GET /api/v1/payments/under-review` | `ADMIN` or `FRAUD_REVIEWER` | Payments in `UNDER_REVIEW`, any owner. Same `page`/`size`/`sort` rules as the owner list |
 | `POST /api/v1/payments/{id}/confirm` | `USER` or `ADMIN` | Owner only. `PENDING` only. `UNDER_REVIEW` is **409**. Another user's payment is **404** |

@@ -37,7 +37,7 @@ Rules (enforced by ArchUnit + `ApplicationModules.of(PaymentsApplication.class).
 - `..web..` → application only. `..infrastructure..` implements ports from domain/application.
 - Modules talk only via each module's public API package (`<module>.api` / named interfaces) or via integration events. `notifications` learns about payments **only through RabbitMQ events**.
 - Constructor injection only; no field injection.
-- CQRS: write side = `XxxCommand` + `XxxCommandHandler` (returns id/result, never entities); read side = `XxxQuery` + `XxxQueryHandler` returning read models (records) and may read via dedicated query repositories/projections. No Event Sourcing.
+- CQRS + Event Sourcing (spec 012, ADR 0016): command handlers replay and append facts for Payment, User, RefreshTokenFamily and Notification; queries return records from hybrid projections. Password credentials remain separate state. Transactional outbox remains the integration boundary.
 
 ## API contract v1 (all JSON; errors = RFC 7807 `application/problem+json` with `type,title,status,detail,instance,correlationId`, never stack traces)
 Identity (public): `POST /api/v1/auth/register` {email,password,displayName} → 201 · `POST /api/v1/auth/login` → 200 {accessToken,refreshToken,tokenType:"Bearer",expiresIn} · `POST /api/v1/auth/refresh` {refreshToken} → 200 rotated pair (reuse of a rotated token revokes the whole family → 401) · `POST /api/v1/auth/logout` → 204. Auth endpoints are rate-limited → 429 + `Retry-After`.
