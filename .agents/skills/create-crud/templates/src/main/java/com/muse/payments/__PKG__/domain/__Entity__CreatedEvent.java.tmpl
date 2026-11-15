@@ -1,0 +1,28 @@
+package com.muse.payments.__PKG__.domain;
+
+import com.muse.payments.shared.domain.DomainEvent;
+
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
+
+public record __Entity__CreatedEvent(
+        UUID eventId,
+        UUID __entity__Id,
+        UUID userId,
+        String name,
+        Instant occurredAt
+) implements DomainEvent {
+
+    public __Entity__CreatedEvent {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(__entity__Id, "__entity__Id must not be null");
+        Objects.requireNonNull(userId, "userId must not be null");
+        Objects.requireNonNull(name, "name must not be null");
+        occurredAt = occurredAt == null ? Instant.now() : occurredAt;
+    }
+
+    public __Entity__CreatedEvent(UUID __entity__Id, UUID userId, String name) {
+        this(UUID.randomUUID(), __entity__Id, userId, name, Instant.now());
+    }
+}

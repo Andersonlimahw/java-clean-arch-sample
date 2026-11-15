@@ -1,0 +1,11 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.shared.application.Query;
+
+import java.util.UUID;
+
+public record Get__Entity__ByIdQuery(
+        UUID __entity__Id,
+        UUID userId
+) implements Query<__Entity__Response> {
+}

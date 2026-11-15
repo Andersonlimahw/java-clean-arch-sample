@@ -5,6 +5,8 @@
 This is the machine-readable documentation index. Read the linked pages for current behavior; ADRs record immutable trade-offs.
 
 ## Overview
+- [AI tooling](ai-tooling.md): Canonical skills, harness pointers, CRUD scaffold, local proof and architecture reviewer.
+- [AI tooling validation](test-plans/ai-tooling-validation.md): Disposable products proof, 178 tests, Kubernetes and harness layout checks.
 
 - [Documentation index](README.md): Human entry point and documentation map.
 - [Architecture](architecture.md): Module boundaries, Clean Architecture, CQRS, outbox, security, and runtime flows.

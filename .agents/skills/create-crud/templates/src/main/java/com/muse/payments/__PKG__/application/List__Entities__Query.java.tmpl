@@ -1,0 +1,13 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.shared.application.Query;
+
+import java.util.UUID;
+
+public record List__Entities__Query(
+        UUID userId,
+        int page,
+        int size,
+        String sort
+) implements Query<PageResponse<__Entity__Response>> {
+}

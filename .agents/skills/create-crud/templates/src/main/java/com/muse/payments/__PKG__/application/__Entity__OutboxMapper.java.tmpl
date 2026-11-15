@@ -1,0 +1,78 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__CreatedEvent;
+import com.muse.payments.__PKG__.domain.__Entity__DeletedEvent;
+import com.muse.payments.__PKG__.domain.__Entity__UpdatedEvent;
+import com.muse.payments.shared.application.IntegrationEvent;
+import com.muse.payments.shared.application.OutboxPort;
+import com.muse.payments.shared.domain.DomainEvent;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * One mapping from __LABEL__ domain events to outbox rows. Every event type listed here needs a
+ * routing key in {@code OutboxRelayService.resolveRoutingKey} and a queue bound to it, or the
+ * broker returns the message as unroutable and the relay retries it forever.
+ */
+public final class __Entity__OutboxMapper {
+
+    public static final String AGGREGATE_TYPE = "__Entity__";
+    public static final String EVENT_CREATED = "__Entity__Created";
+    public static final String EVENT_UPDATED = "__Entity__Updated";
+    public static final String EVENT_DELETED = "__Entity__Deleted";
+
+    private __Entity__OutboxMapper() {
+    }
+
+    public static void appendAll(OutboxPort outboxPort, List<DomainEvent> events) {
+        for (DomainEvent event : events) {
+            IntegrationEvent integrationEvent = toIntegrationEvent(event);
+            if (integrationEvent != null) {
+                outboxPort.append(integrationEvent);
+            }
+        }
+    }
+
+    public static IntegrationEvent toIntegrationEvent(DomainEvent event) {
+        if (event instanceof __Entity__CreatedEvent created) {
+            return IntegrationEvent.create(
+                    AGGREGATE_TYPE,
+                    created.__entity__Id(),
+                    EVENT_CREATED,
+                    Map.of(
+                            "__entity__Id", created.__entity__Id(),
+                            "userId", created.userId(),
+                            "name", created.name()
+                    ),
+                    Map.of("aggregateType", AGGREGATE_TYPE)
+            );
+        }
+        if (event instanceof __Entity__UpdatedEvent updated) {
+            return IntegrationEvent.create(
+                    AGGREGATE_TYPE,
+                    updated.__entity__Id(),
+                    EVENT_UPDATED,
+                    Map.of(
+                            "__entity__Id", updated.__entity__Id(),
+                            "userId", updated.userId(),
+                            "name", updated.name()
+                    ),
+                    Map.of("aggregateType", AGGREGATE_TYPE)
+            );
+        }
+        if (event instanceof __Entity__DeletedEvent deleted) {
+            return IntegrationEvent.create(
+                    AGGREGATE_TYPE,
+                    deleted.__entity__Id(),
+                    EVENT_DELETED,
+                    Map.of(
+                            "__entity__Id", deleted.__entity__Id(),
+                            "userId", deleted.userId()
+                    ),
+                    Map.of("aggregateType", AGGREGATE_TYPE)
+            );
+        }
+        return null;
+    }
+}

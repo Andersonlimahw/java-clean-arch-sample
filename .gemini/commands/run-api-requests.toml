@@ -1,0 +1,6 @@
+description = "run-api-requests: follow the canonical repository skill"
+prompt = """
+Read AGENTS.md, then .agents/skills/run-api-requests/SKILL.md and follow that workflow.
+Arguments: {{args}}
+Respect the repository scope and authorization rules. Report actual validation evidence.
+"""

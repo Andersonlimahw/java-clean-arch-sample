@@ -1,0 +1,6 @@
+description = "add-integration-event: follow the canonical repository skill"
+prompt = """
+Read AGENTS.md, then .agents/skills/add-integration-event/SKILL.md and follow that workflow.
+Arguments: {{args}}
+Respect the repository scope and authorization rules. Report actual validation evidence.
+"""

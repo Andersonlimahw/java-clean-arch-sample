@@ -1,0 +1,34 @@
+package com.muse.payments.__PKG__.application;
+
+import com.muse.payments.__PKG__.domain.__Entity__Sort;
+import com.muse.payments.shared.domain.ValidationException;
+
+public final class __Entity__Sorts {
+
+    public static final String CREATED_AT_DESC = "createdAt,desc";
+    public static final String CREATED_AT_ASC = "createdAt,asc";
+
+    private __Entity__Sorts() {
+    }
+
+    public static __Entity__Sort parse(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return __Entity__Sort.CREATED_AT_DESC;
+        }
+        String normalized = raw.trim();
+        if (CREATED_AT_DESC.equals(normalized)) {
+            return __Entity__Sort.CREATED_AT_DESC;
+        }
+        if (CREATED_AT_ASC.equals(normalized)) {
+            return __Entity__Sort.CREATED_AT_ASC;
+        }
+        throw new ValidationException("sort must be one of: createdAt,desc, createdAt,asc");
+    }
+
+    public static String canonical(__Entity__Sort sort) {
+        return switch (sort) {
+            case CREATED_AT_ASC -> CREATED_AT_ASC;
+            case CREATED_AT_DESC -> CREATED_AT_DESC;
+        };
+    }
+}

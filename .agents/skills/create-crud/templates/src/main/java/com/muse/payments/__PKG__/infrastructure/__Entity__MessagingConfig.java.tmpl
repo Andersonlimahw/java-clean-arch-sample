@@ -1,0 +1,41 @@
+package com.muse.payments.__PKG__.infrastructure;
+
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * Gives __LABEL__ events a destination. The outbox relay publishes with mandatory routing, so an
+ * event type without a bound queue is returned by the broker and retried forever.
+ */
+@Configuration
+public class __Entity__MessagingConfig {
+
+    public static final String QUEUE_EVENTS = "__QUEUE__";
+    public static final String ROUTING_PATTERN = "__EVENT_KEY__.*";
+
+    /**
+     * No consumer reads this queue yet. Messages expire after a day so it cannot grow without
+     * bound. A consumer that must not lose events needs its own queue without this TTL: RabbitMQ
+     * does not allow changing the arguments of an existing queue.
+     */
+    static final int EVENT_TTL_MS = 86_400_000;
+
+    @Bean
+    public Queue __entity__EventsQueue() {
+        return QueueBuilder.durable(QUEUE_EVENTS)
+                .ttl(EVENT_TTL_MS)
+                .build();
+    }
+
+    @Bean
+    public Binding __entity__EventsBinding(Queue __entity__EventsQueue, TopicExchange paymentsExchange) {
+        return BindingBuilder.bind(__entity__EventsQueue)
+                .to(paymentsExchange)
+                .with(ROUTING_PATTERN);
+    }
+}

@@ -1,0 +1,20 @@
+package com.muse.payments.__PKG__.application;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+
+public record Update__Entity__Request(
+        @NotBlank(message = "Name is required")
+        @Size(max = 120, message = "Name must not exceed 120 characters")
+        String name,
+
+        @Size(max = 255, message = "Description must not exceed 255 characters")
+        String description,
+
+        @NotNull(message = "Version is required")
+        @PositiveOrZero(message = "Version must be zero or greater")
+        Long version
+) {
+}
