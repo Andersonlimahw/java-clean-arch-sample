@@ -3,10 +3,10 @@ package com.muse.payments.shared.security;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -40,13 +40,14 @@ public final class OffloadedPasswordEncoder implements PasswordEncoder, AutoClos
                 threads,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(threads * QUEUE_SLOTS_PER_THREAD),
+                new ArrayBlockingQueue<>(threads * QUEUE_SLOTS_PER_THREAD),
                 Thread.ofPlatform().daemon().name(THREAD_NAME_PREFIX, 0).factory());
+        this.executor.prestartAllCoreThreads();
     }
 
-    /** Half of the available processors, at least one. */
+    /** Available processors minus one (for carriers and I/O), at least one. */
     public static int defaultThreads() {
-        return Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+        return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
     }
 
     @Override

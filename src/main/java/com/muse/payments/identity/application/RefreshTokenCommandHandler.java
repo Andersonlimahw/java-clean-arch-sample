@@ -73,7 +73,7 @@ public class RefreshTokenCommandHandler implements CommandHandler<RefreshTokenCo
 
         RefreshToken childToken = existingToken.rotate(newHashedToken, newExpiresAt);
         refreshTokenRepository.save(existingToken);
-        refreshTokenRepository.save(childToken);
+        refreshTokenRepository.insert(childToken);
 
         String newAccessToken = jwtTokenIssuer.issueAccessToken(user.getId(), user.getRoles());
         return AuthTokensResponse.of(newAccessToken, newRawToken, jwtProperties.accessTokenTtl().toSeconds());

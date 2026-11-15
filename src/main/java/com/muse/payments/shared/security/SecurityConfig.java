@@ -82,14 +82,19 @@ public class SecurityConfig {
     }
 
     /**
-     * BCrypt cost 12, hashed off the virtual-thread carriers. {@code app.security.password-hashing-threads}
-     * of 0 means half of the available processors, at least one.
+     * BCrypt hashed off the virtual-thread carriers. {@code app.security.bcrypt-cost} defaults to 10
+     * (override via {@code BCRYPT_COST}). {@code app.security.password-hashing-threads} of 0 means
+     * {@code availableProcessors() - 1}, at least one.
      */
     @Bean(destroyMethod = "close")
     public PasswordEncoder passwordEncoder(
+            @Value("${app.security.bcrypt-cost:10}") int bcryptCost,
             @Value("${app.security.password-hashing-threads:0}") int hashingThreads) {
+        if (bcryptCost < 4 || bcryptCost > 31) {
+            throw new IllegalArgumentException("app.security.bcrypt-cost must be between 4 and 31, got: " + bcryptCost);
+        }
         int threads = hashingThreads > 0 ? hashingThreads : OffloadedPasswordEncoder.defaultThreads();
-        return new OffloadedPasswordEncoder(new BCryptPasswordEncoder(12), threads);
+        return new OffloadedPasswordEncoder(new BCryptPasswordEncoder(bcryptCost), threads);
     }
 
     @Bean

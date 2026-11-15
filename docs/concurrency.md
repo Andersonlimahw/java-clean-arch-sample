@@ -23,7 +23,7 @@ PostgreSQL deadlocks (`40P01`) and serialization failures (`40001`) are treated 
 
 Two rules follow from that, and both are in [ADR 0015](adr/0015-virtual-thread-hot-paths.md):
 
-- **CPU work leaves the carriers.** A virtual thread is not time-sliced, so BCrypt (cost 12) would keep a carrier for the whole hash. `OffloadedPasswordEncoder` runs `encode` and `matches` on a pool of platform threads (`app.security.password-hashing-threads`, default half of the processors, at least one) while the calling virtual thread waits parked. When the pool and its queue are full, the hash runs on the caller.
+- **CPU work leaves the carriers.** A virtual thread is not time-sliced, so BCrypt (`app.security.bcrypt-cost`, default 10, overridable via `BCRYPT_COST`) would keep a carrier for the whole hash. `OffloadedPasswordEncoder` runs `encode` and `matches` on a pre-started pool of platform threads (`app.security.password-hashing-threads`, default `availableProcessors() - 1`, at least one) backed by a bounded `ArrayBlockingQueue` while the calling virtual thread waits parked. When the pool and its queue are full, the hash runs on the caller.
 - **No connection is held across slow work.** Register and login are not one transaction. The user read and the write each use the repository's own transaction, so no pooled connection is held while BCrypt runs. The unique index on `users.email` decides a concurrent duplicate registration.
 
 ## Redis cache and stampede protection
