@@ -9,7 +9,7 @@ For the full guide index, see [../README.md](../README.md). Implementation guide
 | [0001](0001-modular-monolith-vertical-slices.md) | Modular monolith with vertical slices (trip planner) | Superseded by [0002](0002-payments-pivot.md) (domain) and [0003](0003-modular-monolith-vs-microservices.md) (structure) |
 | [0002](0002-payments-pivot.md) | Pivot from trip planner to payments | Accepted. Supersedes the domain of 0001. Structure is 0003. |
 | [0003](0003-modular-monolith-vs-microservices.md) | Modular monolith instead of microservices | Accepted. Supersedes 0001's structure. |
-| [0004](0004-cqrs-without-event-sourcing.md) | CQRS without event sourcing | Accepted |
+| [0004](0004-cqrs-without-event-sourcing.md) | CQRS without event sourcing | Superseded by [0016](0016-event-sourcing-with-hybrid-projections.md) |
 | [0005](0005-rabbitmq-vs-kafka.md) | RabbitMQ instead of Kafka | Accepted |
 | [0006](0006-transactional-outbox.md) | Transactional outbox | Accepted |
 | [0007](0007-eventual-consistency.md) | Eventual consistency for notifications | Accepted |
@@ -21,3 +21,4 @@ For the full guide index, see [../README.md](../README.md). Implementation guide
 | [0013](0013-java-25-lts.md) | Java 25 LTS | Accepted |
 | [0014](0014-web-boundary-and-strict-local-gate.md) | Application boundaries and strict local validation | Accepted |
 | [0015](0015-virtual-thread-hot-paths.md) | Virtual-thread-aware hot paths and batched outbox relay | Accepted |
+| [0016](0016-event-sourcing-with-hybrid-projections.md) | Event sourcing with hybrid projections | Accepted. Supersedes 0004. |

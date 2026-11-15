@@ -1,8 +1,8 @@
 # Specification: 012 — Event Sourcing for payments, identity and notifications
 
-**Modules**: `shared`, `payments`, `identity`, `notifications`  
-**Branch**: `docs/spec-012-event-sourcing` (spec); one branch per increment afterwards  
-**Status**: Draft — awaiting review  
+**Modules**: `shared`, `payments`, `identity`, `notifications`
+**Branch**: `docs/spec-012-event-sourcing` (spec); one branch per increment afterwards
+**Status**: Accepted — implementation proceeds in increments
 **Supersedes**: ADR 0004 (CQRS without event sourcing) once increment 0 merges
 
 ---
@@ -66,7 +66,7 @@ projection_checkpoints (projection VARCHAR(100) PRIMARY KEY, last_position BIGIN
 
 ### 4.2 Append and optimistic concurrency
 
-`EventStore.append(streamType, streamId, expectedVersion, events)` inserts rows with `stream_version = expectedVersion + 1..n`. A unique violation on `(stream_type, stream_id, stream_version)` becomes `ConflictException` → **409**. Exception: on `RefreshTokenFamily` rotation, a `ConflictException` means a concurrent request already rotated that token, so the loser treats it as reuse, appends `FamilyRevoked` (latest stream version, `REQUIRES_NEW`), and returns **401** (`BadCredentialsException`), preserving §1.3. This replaces the JPA `@Version` check. The projection `version` column, which `PaymentResponse.version` exposes (0 after create, 1 after confirm — `PaymentsIT`), is `stream_version - 1`, so the API value does not change. `If-Match` is not implemented today and stays out of scope.
+`EventStore.append(streamType, streamId, expectedVersion, events)` takes a transaction-scoped advisory lock for the stream and requires `expectedVersion` to equal the current stream version before inserting rows with `stream_version = expectedVersion + 1..n`. Stale and ahead-of-stream writes become `ConflictException` → **409**, so no version gaps are created; the unique `(stream_type, stream_id, stream_version)` constraint remains a backstop. Exception: on `RefreshTokenFamily` rotation, a `ConflictException` means a concurrent request already rotated that token, so the loser treats it as reuse, appends `FamilyRevoked` (latest stream version, `REQUIRES_NEW`), and returns **401** (`BadCredentialsException`), preserving §1.3. This replaces the JPA `@Version` check. The projection `version` column, which `PaymentResponse.version` exposes (0 after create, 1 after confirm — `PaymentsIT`), is `stream_version - 1`, so the API value does not change. `If-Match` is not implemented today and stays out of scope.
 
 ### 4.3 Loading, snapshots
 
@@ -152,7 +152,7 @@ Every increment: own worktree and PR, `scripts/ci-local.sh` green, `Architecture
 
 | Inc | Scope | Acceptance (verifiable) |
 |---|---|---|
-| 0 | Event store kernel + migration rewrite + ADR 0016 | Consolidated `V1`–`V4` apply on empty PostgreSQL 16; `event_store` `UPDATE`/`DELETE` raise; `EventStore` IT: concurrent append with the same expected version → exactly one success and one `ConflictException`; load folds events in order; upcaster unit test from a v1 fixture; snapshot ignored when `schema_version` differs; all existing tests unchanged and green. ADR 0016 supersedes 0004. |
+| 0 | Event store kernel + migration rewrite + ADR 0016 | Consolidated `V1`–`V4` apply on empty PostgreSQL 16; `event_store` `UPDATE`/`DELETE` raise; `EventStore` IT: concurrent append with the same expected version → exactly one success and one `ConflictException`, ahead-of-stream append → conflict without a version gap; load folds events in order; upcaster unit test from a v1 fixture; snapshot ignored when `schema_version` differs; all existing tests unchanged and green. ADR 0016 supersedes 0004. |
 | 1 | `Payment` write side event-sourced; `payments` sync projection | Every transition writes exactly one `event_store` row with contiguous `stream_version`; `payments.version` = `stream_version - 1` and the API `version` values in `PaymentsIT`/`PaymentCacheIT` are unchanged; replaying a stream equals the projection row (IT, all six event types); concurrent confirm → one 200, one 409 (existing IT); outbox rows and routing keys unchanged (`MessagingNotificationsIT` unchanged); idempotency replay unchanged (`IdempotencyAndAccessIT`, `PaymentsIT` unchanged); `PaymentJpaAdapter` no longer writes rows outside the projector. |
 | 2 | Async projection runtime + `payment_history` + history endpoint + rebuild mode + lag metric | History lists events in order for owner/ADMIN/FRAUD_REVIEWER and 404 for another `USER` (IT with Awaitility); out-of-order commit IT does not skip an event; restart resumes from checkpoint without duplicates; `APP_PROJECTION_REBUILD=payment_history` rebuilds an identical table and exits 0; `projection.lag` exposed on `/actuator/prometheus`; Postman request + assertions; OpenAPI has no `CurrentUser` input. |
 | 3 | `User` event-sourced; `users` sync projection; `user_credentials` | Register writes `UserRegistered` with no password hash anywhere in `event_store` (IT greps payloads); duplicate email → 409 unchanged; login reads projection + credentials, no replay; `IdentityIT` unchanged. |

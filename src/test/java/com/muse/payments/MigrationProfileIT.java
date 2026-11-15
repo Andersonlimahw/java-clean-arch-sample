@@ -29,7 +29,9 @@ class MigrationProfileIT extends TestcontainersBase {
     @Test
     @DisplayName("Migration profile applies Flyway and does not start consumers or the outbox scheduler")
     void flywayRunsWithoutConsumers() {
-        assertThat(flyway.info().applied()).hasSizeGreaterThanOrEqualTo(4);
+        assertThat(flyway.info().applied())
+                .extracting(migration -> migration.getVersion().getVersion())
+                .containsExactly("1", "2", "3", "4");
         assertThat(flyway.info().pending()).isEmpty();
         assertThat(listenerRegistry.getListenerContainers()).isNotEmpty();
         assertThat(listenerRegistry.getListenerContainers()).allSatisfy(container -> {

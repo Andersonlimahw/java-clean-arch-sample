@@ -1,6 +1,6 @@
 # ADR 0004 — CQRS without event sourcing
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0016](0016-event-sourcing-with-hybrid-projections.md)
 - **Date:** 2026-11-12
 
 ## Context

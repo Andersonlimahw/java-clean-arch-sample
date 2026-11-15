@@ -3,15 +3,15 @@
 ## Spec
 - [x] Write `specs/012-event-sourcing/{spec.md,plan.md,tasks.md}` with owner decisions D1–D5.
 - [x] Add `scripts/db-reset.sh` (local reset + Flyway replay via migration-only mode, Redis flush, queue purge) and document it.
-- [ ] Review (Change Reviewer) and merge the spec to `main` before any code.
+- [x] Review (Change Reviewer) and merge the spec to `main` before any code.
 
 ## Increment 0 — Kernel and migration rewrite
-- [ ] Consolidate `V1`–`V7` into `V1__shared.sql`, `V2__identity.sql`, `V3__payments.sql`, `V4__notifications.sql`; delete `V5`–`V7` and the `.conf`.
-- [ ] Add `event_store`, `snapshots`, `projection_checkpoints`, and the immutability trigger.
-- [ ] `EventSourcedAggregate`, `EventStore`, `SnapshotStore`, `SyncProjector` ports.
-- [ ] `JdbcEventStore`, `EventTypeRegistry`, `EventSerializer`, upcaster chain, `JdbcSnapshotStore`.
-- [ ] Tests: concurrent append conflict IT, fold order, upcaster fixture, stale-snapshot ignore, trigger rejects UPDATE/DELETE.
-- [ ] ADR 0016 (supersedes 0004), ADR index, ArchUnit rules, `docs/data.md` reset note, `llms.txt`.
+- [x] Consolidate `V1`–`V7` into `V1__shared.sql`, `V2__identity.sql`, `V3__payments.sql`, `V4__notifications.sql`; delete `V5`–`V7` and the `.conf`.
+- [x] Add `event_store`, `snapshots`, `projection_checkpoints`, and the immutability trigger.
+- [x] `EventSourcedAggregate`, `EventStore`, `SnapshotStore`, `SyncProjector` ports.
+- [x] `JdbcEventStore`, `EventTypeRegistry`, `EventSerializer`, upcaster chain, `JdbcSnapshotStore`.
+- [x] Tests: concurrent append conflict IT, ahead-version gap rejection, fold order, upcaster fixture, stale-snapshot ignore, trigger rejects UPDATE/DELETE.
+- [x] ADR 0016 (supersedes 0004), ADR index, ArchUnit rules, `docs/data.md` reset note, `llms.txt`.
 
 ## Increment 1 — Payment
 - [ ] Event-sourced `Payment` with six event types; `PaymentReleasedFromReview` maps to `PaymentCreated` integration event.

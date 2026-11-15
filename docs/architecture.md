@@ -1,15 +1,34 @@
 ---
 title: Architecture
 status: active
-updated: 2026-11-14
-related: [api.md, data.md, messaging.md, adr/0014-web-boundary-and-strict-local-gate.md]
+updated: 2026-11-15
+related: [api.md, data.md, messaging.md, adr/0014-web-boundary-and-strict-local-gate.md, adr/0016-event-sourcing-with-hybrid-projections.md]
 ---
 
 # Architecture — Payments Platform
 
 One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 25.
 Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel. Open means a Spring Modulith module of type `OPEN`: the other modules may depend on it. It holds ports and cross-cutting types, not payment rules.
+Increment 0 installs the shared event-store kernel and schema. Existing aggregate writes still use their current adapters until later increments switch each module; this change alone does not make the event stream the active writer.
 The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md).
+
+## Event-store kernel flow
+
+Increment 0 installs these ports and adapters; module handlers switch to them in later increments. Event append, synchronous projection, and outbox writes then share one database transaction.
+
+```mermaid
+flowchart LR
+    Command[Application command] --> Aggregate[EventSourcedAggregate]
+    Aggregate -->|uncommitted domain events| StorePort[EventStore port]
+    StorePort --> JdbcStore[JdbcEventStore]
+    JdbcStore -->|same transaction| EventLog[(event_store)]
+    Command -->|same transaction, later increments| Projector[SyncProjector]
+    Command -->|same transaction| Outbox[OutboxPort]
+    EventLog -->|global position order, later increments| Async[Async projections]
+    Command -.-> SnapshotPort[SnapshotStore port]
+    SnapshotPort --> JdbcSnapshot[JdbcSnapshotStore]
+    JdbcSnapshot --> Snapshots[(snapshots)]
+```
 
 ## System context (C4 level 1)
 
@@ -220,7 +239,7 @@ Roles travel in the JWT `roles` claim and are enforced as `ROLE_USER`, `ROLE_ADM
 
 Optimistic locking covers the read-modify-write inside the confirm or cancel transaction. There is no `ETag` or `If-Match`. A second request that starts after the winner commits is rejected by the state machine (`urn:problem-type:409`), not by the version check.
 
-A repeated create with the same user, unexpired `Idempotency-Key`, and canonical body (amount scaled to 2 decimals, currency uppercased) returns the stored response and sets `Idempotent-Replayed: true`. A completed row's `expires_at` is 24 hours ahead. A `PROCESSING` lease expires after `app.idempotency.processing-ttl` (default 2 minutes) and can be reclaimed. Lookup of a completed response requires `expires_at > now`. After that, the same key is a new payment. Create commits the idempotency lease in its own transaction, calls the fraud provider with no database connection held, then commits the payment, the outbox row, and the cached response together. An explicit decline commits a 422 problem body on that lease instead of a payment. Any other failure deletes the `PROCESSING` lease. Completion extends `expires_at` to 24 hours and updates only the unexpired `PROCESSING` row for that attempt's `lease_id`. Replaying the key of a payment created as `UNDER_REVIEW` returns that original 201 body even after a reviewer approves the payment. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until a short batch remains (`app.idempotency.cleanup-interval-ms`, default 1 hour). Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments is an offset page: `page` (default 0, must be >= 0), `size` (default 20, must be from 1 to 100), and `sort`. `page * size` must be <= 10000. `sort` is case-sensitive: `createdAt,desc` (default; `created_at DESC, id DESC`) or `createdAt,asc` (`created_at ASC, id ASC`). Spring joins repeated `sort` parameters with a comma, so `sort=createdAt&sort=desc` matches the default and two full values do not. A negative page, a size outside 1..100, a non-integer page or size, an offset above 10000, and any other sort, including `createdAt,DESC`, are HTTP 400 and are not clamped. That is a breaking change for clients that sent `size=0` or `size` above 100 and previously received a clamped page. Omitting the three parameters stays compatible. The body keeps `items`, `page`, `size`, `totalElements`, and `totalPages`, and adds `sort`. Order is stable for a static dataset. A concurrent insert or delete can shift a later offset page, and `totalElements` can disagree with `items`, because the page and the count are two reads. The list index is `idx_payments_user_created_at_id` from `V6__payments_list_index.sql` (`PAYMENTS_LIST_INDEX_VERSION`). See [perf/README.md](../perf/README.md).
+A repeated create with the same user, unexpired `Idempotency-Key`, and canonical body (amount scaled to 2 decimals, currency uppercased) returns the stored response and sets `Idempotent-Replayed: true`. A completed row's `expires_at` is 24 hours ahead. A `PROCESSING` lease expires after `app.idempotency.processing-ttl` (default 2 minutes) and can be reclaimed. Lookup of a completed response requires `expires_at > now`. After that, the same key is a new payment. Create commits the idempotency lease in its own transaction, calls the fraud provider with no database connection held, then commits the payment, the outbox row, and the cached response together. An explicit decline commits a 422 problem body on that lease instead of a payment. Any other failure deletes the `PROCESSING` lease. Completion extends `expires_at` to 24 hours and updates only the unexpired `PROCESSING` row for that attempt's `lease_id`. Replaying the key of a payment created as `UNDER_REVIEW` returns that original 201 body even after a reviewer approves the payment. Each cleanup run deletes expired rows in batches of 500 (`FOR UPDATE SKIP LOCKED`) until a short batch remains (`app.idempotency.cleanup-interval-ms`, default 1 hour). Cancel takes an optional `reason` query parameter; the default is `Customer requested cancellation`. List payments is an offset page: `page` (default 0, must be >= 0), `size` (default 20, must be from 1 to 100), and `sort`. `page * size` must be <= 10000. `sort` is case-sensitive: `createdAt,desc` (default; `created_at DESC, id DESC`) or `createdAt,asc` (`created_at ASC, id ASC`). Spring joins repeated `sort` parameters with a comma, so `sort=createdAt&sort=desc` matches the default and two full values do not. A negative page, a size outside 1..100, a non-integer page or size, an offset above 10000, and any other sort, including `createdAt,DESC`, are HTTP 400 and are not clamped. That is a breaking change for clients that sent `size=0` or `size` above 100 and previously received a clamped page. Omitting the three parameters stays compatible. The body keeps `items`, `page`, `size`, `totalElements`, and `totalPages`, and adds `sort`. Order is stable for a static dataset. A concurrent insert or delete can shift a later offset page, and `totalElements` can disagree with `items`, because the page and the count are two reads. The list index is `idx_payments_user_created_at_id` from the consolidated `V3__payments.sql`. See [perf/README.md](../perf/README.md).
 
 OpenAPI: `/v3/api-docs`. Swagger UI: `/swagger-ui.html`.
 
@@ -255,7 +274,7 @@ Payment status:
 | `COMPLETED` | Confirmed. | 409 | 409 | rejected |
 | `CANCELLED` | Cancelled by the owner or rejected in review. | 409 | 409 | rejected |
 
-`screening_reason`, `held_reason`, `reviewer_id`, and `reviewed_at` are added by `V7__payment_screening_reason.sql`, after the list index in `V6__payments_list_index.sql`. Approval clears `screening_reason` and keeps `held_reason`. The fraud provider is an HTTP `POST /v1/screenings` behind `FraudScreeningPort`. Resilience4j (retry, circuit breaker, bulkhead, time limiter) lives only in the infrastructure adapter. The instance name is `fraudScreening`. `FRAUD_SCREENING_BASE_URL` is required and must be `https` on the `prod` profile. The base Kubernetes ConfigMap does not set it. Local Compose runs a WireMock that answers `CLEAR`. Failure policy is [ADR 0012](adr/0012-fraud-screening-failure-policy.md).
+`screening_reason`, `held_reason`, `reviewer_id`, and `reviewed_at` are in the consolidated `V3__payments.sql`. Approval clears `screening_reason` and keeps `held_reason`. The fraud provider is an HTTP `POST /v1/screenings` behind `FraudScreeningPort`. Resilience4j (retry, circuit breaker, bulkhead, time limiter) lives only in the infrastructure adapter. The instance name is `fraudScreening`. `FRAUD_SCREENING_BASE_URL` is required and must be `https` on the `prod` profile. The base Kubernetes ConfigMap does not set it. Local Compose runs a WireMock that answers `CLEAR`. Failure policy is [ADR 0012](adr/0012-fraud-screening-failure-policy.md).
 
 Permanent failures throw `AmqpRejectAndDontRequeueException` and skip the retry budget: a missing or invalid event id, a missing event type, invalid JSON, a non-object payload, a missing or invalid identifier, or an unknown event type. The listener transaction rolls back, so `processed_events` does not keep that id. Transient failures (the listener wraps them in `RuntimeException`) are retried by the advice chain on the listener container factory: `app.messaging.listener-max-attempts` (default 5), `listener-initial-interval-ms` (default 500), `listener-multiplier` (default 2.0), and `listener-max-interval-ms` (default 10000, a hard cap), with exponential backoff and jitter. `spring.rabbitmq.listener.simple.retry` does not configure this chain. Other listener container properties, including `auto-startup`, still come from Boot. `defaultRequeueRejected` is false. After the attempt budget, `RejectAndDontRequeueRecoverer` rejects without requeue and RabbitMQ routes the message to the DLQ. DLQ messages stay there until an operator inspects them.
 
@@ -303,6 +322,7 @@ Production types take dependencies by constructor. The field-injection rule does
 ## Data model
 
 Selected columns. The Flyway scripts are the full schema.
+The shared event-store kernel is installed in V1, but current payment, identity, and notification handlers continue writing through their existing adapters until their later increments switch them.
 
 ```mermaid
 erDiagram
@@ -346,9 +366,33 @@ erDiagram
         string status
         uuid lease_id
     }
+    EVENT_STORE {
+        bigint global_position PK
+        string stream_type
+        uuid stream_id
+        bigint stream_version
+        uuid event_id UK
+        string event_type
+        int schema_version
+        jsonb payload
+        jsonb metadata
+        xid8 transaction_id
+    }
+    SNAPSHOTS {
+        string stream_type PK
+        uuid stream_id PK
+        bigint stream_version
+        int schema_version
+        jsonb state
+    }
+    PROJECTION_CHECKPOINTS {
+        string projection PK
+        bigint last_position
+        xid8 last_transaction_id
+    }
 ```
 
-Flyway migrations are append-only from V1 through V7. See [data.md](data.md) for each migration, all indexes, the V6 concurrent index build, and a query/index discrepancy found in the current source.
+The clean-database Event Sourcing rollout consolidates the schema into V1–V4 and does not backfill the former V1–V7 tables. See [data.md](data.md) for the event-store kernel, indexes, and local reset procedure.
 
 ## Eval
 

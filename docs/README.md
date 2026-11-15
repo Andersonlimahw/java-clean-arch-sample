@@ -19,7 +19,7 @@ Start here for project guidance:
 | [Postman](postman.md) | Ordered requests, collection variables, token rotation, payload tests, optional fraud review, and Newman. |
 | [Postman execution evidence](test-plans/postman-validation.md) | Real local run: 30 requests, 105 assertions, fraud-review fixtures, and persistence limits. |
 | [Refactor gate evidence](test-plans/refactor-validation.md) | Strict local CI, 110 unit tests, 44 integration tests, and the outbox query test race fix. |
-| [Data model](data.md) | Flyway V1–V7, indexes, constraints, the concurrent V6 index migration, and the local reset + Flyway replay script. |
+| [Data model](data.md) | Consolidated Flyway V1–V4, event-store tables and trigger, indexes, constraints, and the local reset + Flyway replay script. |
 | [Resilience](resilience.md) | Fraud-screening retry, circuit breaker, bulkhead, time limiter, fallbacks, and review policy. |
 | [Concurrency](concurrency.md) | Optimistic locking, transient database locks, virtual threads, cache stampede protection, and outbox claims. |
 | [Testing](testing.md) | Unit/integration test commands, Testcontainers, macOS + Colima, Newman, and k6. |
@@ -28,7 +28,7 @@ Start here for project guidance:
 | [Deployment](deploy.md) | Local runbook, deployment targets, migration mode, rollback, and smoke checks. |
 | [Architecture decision records](adr/README.md) | Accepted and superseded architecture decisions. |
 | [LLM wiki index](llms.txt) | Flat machine-readable inventory of documentation. |
-| [Refactor and validation rules](rules/refactor-and-validation.md) | Prevention rules and executable evaluation commands. |
+| [Refactor and validation rules](rules/refactor-and-validation.md) | Architecture, incremental Java compile, JSONB assertion, and local-gate rules. |
 | [End-to-end demo](demo/e2e-demo.mp4) | Recorded walkthrough; see the [thumbnail](demo/e2e-demo-thumbnail.jpg). |
 
 The operational behavior described here is based on the current source, configuration, migrations, tests, and scripts. Where code and migration comments disagree, the relevant page calls out the discrepancy.

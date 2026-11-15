@@ -1,7 +1,7 @@
 ---
 title: Refactor And Validation Rules
 status: active
-updated: 2026-11-13
+updated: 2026-11-15
 related: [../architecture.md, ../testing.md, ../../AGENTS.md]
 ---
 
@@ -9,6 +9,8 @@ related: [../architecture.md, ../testing.md, ../../AGENTS.md]
 
 ## Rules
 
+- **Incremental Java compile**: Compile each new Java type family with the repository's Java 25 before building dependent features. Verify with: `rtk proxy mvn -B -DskipTests compile`.
+- **JSONB test assertions**: Compare PostgreSQL JSONB values structurally, not by serialized whitespace. Verify by parsing returned JSON before asserting its fields.
 - **Web boundary**: Controllers depend on application/shared contracts; only `@RestControllerAdvice` may translate domain exceptions. Verify with `rtk mvn -q -Dtest=ArchitectureTest test`.
 - **Outbox query isolation**: Keep pending-row query fixtures uncommitted in a rollback-only test transaction and flush before the native query so a background relay cannot consume them. Verify with `rtk mvn -B -Dit.test=PaymentsApplicationIT test-compile failsafe:integration-test failsafe:verify`.
 - **Strict local gate**: `scripts/ci-local.sh` must fail when Docker Compose, Docker, kustomize, or kubeconform validation is unavailable; skipped infrastructure is not a passing gate. Verify with `rtk proxy bash scripts/ci-local.sh`.

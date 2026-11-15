@@ -1,12 +1,12 @@
 # Payment list pagination
 
-`GET /api/v1/payments` filters `payments.user_id` and orders by `created_at DESC, id DESC` (or `created_at ASC, id ASC`). The migration whose version token is `PAYMENTS_LIST_INDEX_VERSION` in `src/main/resources/db/migration` builds `idx_payments_user_created_at_id` on `(user_id, created_at DESC, id DESC)` with `CREATE INDEX CONCURRENTLY`, then drops `idx_payments_created_at` and `idx_payments_user_status`.
+`GET /api/v1/payments` filters `payments.user_id` and orders by `created_at DESC, id DESC` (or `created_at ASC, id ASC`). The consolidated `V3__payments.sql` migration creates `idx_payments_user_created_at_id` on `(user_id, created_at DESC, id DESC)` for a clean database.
 
 ## Version
 
-`PAYMENTS_LIST_INDEX_VERSION=V6` is only in that SQL comment, plus the filename `V6__payments_list_index.sql` and `V6__payments_list_index.sql.conf`. That version stayed V6 when main moved. The fraud-screening columns are the next file, `V7__payment_screening_reason.sql`. Do not edit the V6 script after a shared database has applied it.
+The Event Sourcing rollout rewrites the former V1–V7 history into V1–V4 because the development database is treated as new and no backfill is required. The index is created as part of `V3__payments.sql`; it is not a separate concurrent index migration.
 
-`CREATE INDEX CONCURRENTLY` is outside a transaction (`executeInTransaction=false`) and needs `spring.flyway.postgresql.transactional-lock=false`, because Flyway's default Postgres lock is transactional and would reject `CONCURRENTLY`. There is no `IF NOT EXISTS`: a failed build can leave an `INVALID` index, and the next attempt must drop it instead of skipping it. The two V3 indexes are unused: no payment query filters by `status` or orders by `created_at` alone. `countByUserId` and the page query both use the leading `user_id` of the new index.
+The earlier k6 and EXPLAIN measurements used the same index definition from the former V6 migration. On a clean schema, `CREATE INDEX` runs in the normal Flyway transaction. `countByUserId` and the page query both use the leading `user_id` of the index.
 
 ## Stack
 
@@ -84,5 +84,5 @@ These are not required steps.
 
 - Compose containers cannot reach each other, while `127.0.0.1` published ports work: on this measuring VM, Docker 29's bridge netfilter dropped that traffic until `sudo sysctl -w net.bridge.bridge-nf-call-iptables=0` and the IPv6 equivalent. Recheck with `docker compose exec postgres nc -zvw2 redis 6379`.
 - k6 returns 401: `setup()` logs in on every run. If register was rate-limited (20 auth calls per minute per IP), wait and rerun `perf/seed-payments.sh`.
-- Flyway reports the list index already exists and is `INVALID`: `DROP INDEX CONCURRENTLY idx_payments_user_created_at_id` and rerun the migration. The script has no `IF NOT EXISTS`.
+- Existing local databases have the former Flyway history and must be reset with `scripts/db-reset.sh` before using the consolidated migration history; use the script only against local development Compose.
 - The Compose project name is not `java-clean-arch-sample`: `run-k6.sh` reads the network from the `payments-app` container. Set `K6_NETWORK` if that container is not running.
