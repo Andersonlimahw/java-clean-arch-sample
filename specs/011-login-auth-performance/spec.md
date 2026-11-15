@@ -2,7 +2,7 @@
 
 **Module**: `com.muse.payments.identity` & `com.muse.payments.shared.security`  
 **Branch**: `perf/login-auth-performance`  
-**Status**: In Progress
+**Status**: Delivered — merged in PR #23 (`2af343a`, 2026-11-15)
 
 ---
 

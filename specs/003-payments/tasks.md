@@ -17,4 +17,4 @@
   - Ownership protection (user B cannot read user A's payment -> 404)
 - [x] Validate ArchUnit architecture rules and Spring Modulith boundaries.
 - [x] Execute `mvn -B clean verify` with Testcontainers.
-- [ ] Push to `feat/pr3-payments`, create PR #4, conduct review, squash-merge, cleanup worktree.
+- [x] Push to `feat/pr3-payments`, create PR #4, conduct review, merge, cleanup worktree (merged as `3caa063`).

@@ -13,4 +13,4 @@
   - Duplicate event re-delivery causes zero duplicate notifications
   - Correlation ID is preserved from payment creation to notification log/context
 - [x] Execute `mvn -B clean verify` with full container suite.
-- [ ] Push to `feat/pr5-messaging`, open PR #5, run review, squash-merge, and clean worktree.
+- [x] Push to `feat/pr5-messaging`, open PR #5, run review, merge, and clean worktree (merged as `0ee3ed4`).

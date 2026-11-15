@@ -10,5 +10,5 @@
 - [x] T008 [P] `railway.json`, `render.yaml`, `deploy/cloudrun/service.yaml`
 - [x] T009 README "Platform & CI" section + `deploy/k8s/README.md`
 - [x] T010 Validate: compose config, kustomize + kubeconform (strict, 1.30), hadolint, `bash -n`, image build on current `main`
-- [ ] T011 After PR1 merge: rebase, image build, `docker compose up` readiness smoke
+- [x] T011 After PR1 merge: rebase, image build, `docker compose up` readiness smoke (Compose stack + API smoke recorded on `main` for PR #18, see README demo; `scripts/validate-api.sh` polls readiness)
 - [x] T012 PR1/PR8: wire `app.migration-only=true` (run Flyway, then `SpringApplication.exit`)

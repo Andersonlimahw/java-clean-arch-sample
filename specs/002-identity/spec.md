@@ -2,7 +2,7 @@
 
 **Module**: `com.muse.payments.identity`  
 **Feature Branch**: `feat/pr2-identity`  
-**Status**: In Progress  
+**Status**: Delivered — merged in PR #3 (`af3760d`, 2026-11-11)  
 
 ---
 
