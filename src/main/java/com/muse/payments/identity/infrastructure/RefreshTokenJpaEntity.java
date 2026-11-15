@@ -3,14 +3,18 @@ package com.muse.payments.identity.infrastructure;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "refresh_tokens")
-public class RefreshTokenJpaEntity {
+public class RefreshTokenJpaEntity implements Persistable<UUID> {
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
@@ -33,6 +37,9 @@ public class RefreshTokenJpaEntity {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Transient
+    private boolean isNew;
 
     public RefreshTokenJpaEntity() {
     }
@@ -85,5 +92,21 @@ public class RefreshTokenJpaEntity {
 
     public void setRevoked(boolean revoked) {
         isRevoked = revoked;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    public RefreshTokenJpaEntity markNew() {
+        this.isNew = true;
+        return this;
+    }
+
+    @PostLoad
+    @PostPersist
+    void markNotNew() {
+        this.isNew = false;
     }
 }

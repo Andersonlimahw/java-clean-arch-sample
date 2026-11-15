@@ -36,6 +36,13 @@ public class RefreshTokenJpaAdapter implements RefreshTokenRepository {
         return toDomain(saved);
     }
 
+    @Override
+    public RefreshToken insert(RefreshToken token) {
+        RefreshTokenJpaEntity entity = toEntity(token).markNew();
+        RefreshTokenJpaEntity saved = repository.save(entity);
+        return toDomain(saved);
+    }
+
     private RefreshToken toDomain(RefreshTokenJpaEntity entity) {
         return new RefreshToken(
                 entity.getId(),

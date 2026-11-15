@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Objects;
 
 @Service
@@ -45,7 +46,7 @@ public class LoginCommandHandler implements CommandHandler<LoginCommand, AuthTok
     public AuthTokensResponse handle(LoginCommand command) {
         Objects.requireNonNull(command, "command cannot be null");
 
-        String normalizedEmail = command.email().trim().toLowerCase();
+        String normalizedEmail = command.email().trim().toLowerCase(Locale.ROOT);
         User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
@@ -62,7 +63,7 @@ public class LoginCommandHandler implements CommandHandler<LoginCommand, AuthTok
         Instant expiresAt = Instant.now().plus(jwtProperties.refreshTokenTtl());
 
         RefreshToken refreshToken = RefreshToken.create(user.getId(), hashedToken, expiresAt);
-        refreshTokenRepository.save(refreshToken);
+        refreshTokenRepository.insert(refreshToken);
 
         String accessToken = jwtTokenIssuer.issueAccessToken(user.getId(), user.getRoles());
         return AuthTokensResponse.of(accessToken, rawRefreshToken, jwtProperties.accessTokenTtl().toSeconds());
