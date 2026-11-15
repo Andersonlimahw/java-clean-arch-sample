@@ -5,7 +5,7 @@
     "url": "/v1/screenings",
     "bodyPatterns": [
       {
-        "matchesJsonPath": "$[?(@.amount >= 5000)]"
+        "matchesJsonPath": "$..[?(@.amount >= 5000)]"
       }
     ]
   },
