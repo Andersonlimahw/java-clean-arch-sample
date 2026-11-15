@@ -103,9 +103,11 @@ class LoginPerformanceIT extends TestcontainersBase {
                 percentileMs(burstNanos, 0.99)
         );
 
+        // Override on slow or shared machines: -Dlogin.p95.budget.ms=300
+        double budgetMs = Double.parseDouble(System.getProperty("login.p95.budget.ms", "150"));
         assertThat(percentileMs(seqNanos, 0.95))
-                .as("Sequential login p95 latency should stay under 150ms")
-                .isLessThan(150.0);
+                .as("Sequential login p95 latency should stay under %.0fms", budgetMs)
+                .isLessThan(budgetMs);
     }
 
     private static double percentileMs(long[] sortedNanos, double p) {
