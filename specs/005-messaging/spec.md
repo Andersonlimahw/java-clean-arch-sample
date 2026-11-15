@@ -2,7 +2,7 @@
 
 **Module**: `com.muse.payments.shared.infrastructure.messaging` & `com.muse.payments.notifications`  
 **Feature Branch**: `feat/pr5-messaging`  
-**Status**: In Progress  
+**Status**: Delivered — merged in PR #5 (`0ee3ed4`, 2026-11-11); confirms, lifecycle events and DLQ in PR #7  
 
 ---
 

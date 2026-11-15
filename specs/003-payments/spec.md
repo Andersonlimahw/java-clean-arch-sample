@@ -2,7 +2,7 @@
 
 **Module**: `com.muse.payments.payments`  
 **Feature Branch**: `feat/pr3-payments`  
-**Status**: In Progress  
+**Status**: Delivered — merged in PR #4 (`3caa063`, 2026-11-11); follow-ups in PRs #12, #15, #16, #17  
 
 ---
 

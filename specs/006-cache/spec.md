@@ -2,7 +2,7 @@
 
 **Module**: `com.muse.payments.shared.infrastructure.cache` & `com.muse.payments.payments`  
 **Feature Branch**: `feat/pr6-cache`  
-**Status**: In Progress  
+**Status**: Delivered — merged in PR #6 (`bc49d73`, 2026-11-11)  
 
 ---
 

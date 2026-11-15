@@ -13,4 +13,4 @@
   - Updating payment (`confirm`) evicts cache key after commit
   - Resilient fallback: read succeeds from PostgreSQL even if Redis is stopped or unreachable
 - [x] Execute `mvn -B clean verify` with Testcontainers.
-- [ ] Push to `feat/pr6-cache`, create PR #6, review, squash-merge, and clean worktree.
+- [x] Push to `feat/pr6-cache`, create PR #6, review, merge, and clean worktree (merged as `bc49d73`).

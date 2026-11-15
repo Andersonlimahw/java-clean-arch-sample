@@ -1,6 +1,6 @@
 # Feature Specification: Platform Infrastructure
 
-**Feature branch**: `feat/pr4-platform-infra` · **Status**: Draft · **Owner**: PR4
+**Feature branch**: `feat/pr4-platform-infra` · **Status**: Delivered — merged in PR #2 (`8e54cfd`, 2026-11-11); migration Job in PR #9 · **Owner**: PR4
 
 ## Summary
 

@@ -10,4 +10,4 @@
 - [x] Measure after login latency (p50, p95, p99) and verify p95 < 150ms.
 - [x] Update `docs/adr/0015-virtual-thread-hot-paths.md` and run `scripts/validate-docs.sh`.
 - [x] Run `mvn test` and `mvn test-compile failsafe:integration-test`.
-- [ ] Semantic commits, open PR, run `code-review-expert`, fix findings, and merge to `main`.
+- [x] Semantic commits, open PR, run `code-review-expert`, fix findings, and merge to `main` (PR #23, `2af343a`).
