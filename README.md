@@ -130,6 +130,39 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 
 The script polls readiness, then walks register, login, payment create/confirm, and notifications. API documentation is at `http://localhost:8080/swagger-ui.html`. The [Postman workflow](docs/postman.md) covers all business endpoints with ordered folders, preserved collection variables, token reuse, payload tests, pagination, cancellation, and optional fraud review. The load test and the list index explain are in [perf/README.md](perf/README.md).
 
+### Services & Connection Endpoints
+
+When running locally via Docker Compose, services are accessible on the host via loopback (`127.0.0.1` / `localhost`):
+
+#### Core Infrastructure (`docker-compose.yml`)
+
+| Service | Protocol / Port | Default Credentials | Documentation & Guide |
+|---|---|---|---|
+| **Spring Boot API** | HTTP `8080` | RS256 Bearer JWT | [docs/api.md](docs/api.md), [Swagger UI](http://localhost:8080/swagger-ui.html), [Readiness](http://localhost:8080/actuator/health/readiness) |
+| **PostgreSQL 16** | TCP `5432` | User: `postgres`, Pass: `postgres`, DB: `payments` (`jdbc:postgresql://localhost:5432/payments`) | [docs/data.md](docs/data.md) |
+| **Redis 7** | TCP `6379` | Password: `redis_secret` | [docs/concurrency.md](docs/concurrency.md) |
+| **RabbitMQ 3.13** | AMQP `5672`, HTTP `15672` (Management UI) | User: `guest`, Password: `guest`, VHost: `/` | [docs/messaging.md](docs/messaging.md), [Management UI](http://localhost:15672) |
+| **WireMock** | HTTP `8090` | Public mock provider | [docs/resilience.md](docs/resilience.md), [Mappings Admin](http://localhost:8090/__admin/mappings) |
+| **JDWP Debugger** | TCP `5005` | Socket attach (started via `make debug`) | [docker-compose.debug.yml](docker-compose.debug.yml) |
+
+#### Observability & Tracing (`docker-compose.observability.yml`)
+
+Start the telemetry stack alongside core services:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+```
+
+| Tool | UI / Port | Default Credentials | Documentation & Guide |
+|---|---|---|---|
+| **Grafana** | HTTP `3000` | User: `payments`, Password: `local-observability-only` | [docs/observability.md](docs/observability.md), [Grafana UI](http://localhost:3000) |
+| **Prometheus** | HTTP `9090` | Public metrics dashboard | [docs/observability.md](docs/observability.md), [Prometheus UI](http://localhost:9090) |
+| **Jaeger UI** | HTTP `16686` | Distributed traces UI | [docs/observability.md](docs/observability.md), [Jaeger UI](http://localhost:16686) |
+| **OTEL Collector** | HTTP `4318` (OTLP HTTP), `4317` (gRPC) | Ingestion pipeline | [docs/observability.md](docs/observability.md) |
+| **Kibana** *(logs profile)* | HTTP `5601` | Single-node local cluster | [docs/observability.md](docs/observability.md) (started with `--profile logs`) |
+| **Elasticsearch** *(logs profile)* | HTTP `9200` | HTTP loopback | [docs/observability.md](docs/observability.md) |
+
+For comprehensive architecture decisions, performance tuning, and operational runbooks, browse the complete documentation index at [docs/README.md](docs/README.md) or the machine-readable inventory at [docs/llms.txt](docs/llms.txt).
+
 ### Kubernetes migration Job
 
 The Job in `deploy/k8s/base/flyway-job.yaml` is named `payments-flyway-migration` and sets `APP_MIGRATION_ONLY=true`. The process applies Flyway, does not serve HTTP, and does not start Rabbit consumers or the outbox scheduler. It exits `0` only after migrations are applied and nothing is pending, and exits non-zero if startup or Flyway fails. Replicas inherit `SPRING_FLYWAY_ENABLED=false` from the ConfigMap and leave `APP_MIGRATION_ONLY` unset, so they do not migrate and they keep serving traffic.
