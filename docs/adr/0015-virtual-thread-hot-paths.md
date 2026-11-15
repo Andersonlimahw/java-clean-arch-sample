@@ -13,7 +13,8 @@ Status: Accepted
 
 ## Decision
 
-- `OffloadedPasswordEncoder` wraps `BCryptPasswordEncoder(12)`. A virtual caller submits the hash to a bounded pool of platform threads and waits parked. The pool is `app.security.password-hashing-threads`; `0` (default) means half of the available processors, at least one. A full pool runs the hash on the caller, which is the previous behavior. A platform caller is not offloaded.
+- `OffloadedPasswordEncoder` wraps `BCryptPasswordEncoder(bcryptCost)` where `app.security.bcrypt-cost` defaults to `10` (overridable via `BCRYPT_COST`, e.g., `12` when strict compliance is required). A virtual caller submits the hash to a bounded `ArrayBlockingQueue` pool of pre-started platform threads and waits parked. The pool is `app.security.password-hashing-threads`; `0` (default) means `availableProcessors() - 1`, at least one. A full pool runs the hash on the caller, which is the previous behavior. A platform caller is not offloaded.
+- `RefreshTokenJpaEntity` implements `Persistable<UUID>` and `LoginCommandHandler` / `RefreshTokenCommandHandler` use `refreshTokenRepository.insert(...)` for newly created tokens so Hibernate executes a direct `INSERT` without a preceding `SELECT`. `JwtTokenIssuer` reuses an immutable `RS256` `JwsHeader` and pre-computed audience list.
 - `RegisterCommandHandler` and `LoginCommandHandler` are no longer one transaction. Each repository call uses its own transaction, and no connection is held while the password is hashed. The unique index on `users.email` still decides a concurrent duplicate.
 - `OutboxRelayService` claims up to 50 rows in one transaction, sends them without waiting between messages, awaits the confirms together, and marks the confirmed rows with one `UPDATE`. A poll runs up to 20 batches. A batch holds at most one event per aggregate, and a failed row is rescheduled on its own. Delivery stays at-least-once; see [../messaging.md](../messaging.md).
 - The image adds `-XX:+UseCompactObjectHeaders` ([JEP 519](https://openjdk.org/jeps/519), a product option since JDK 25) to `JAVA_OPTS`.
@@ -27,8 +28,10 @@ Local machine, JDK 25.0.1, 11 processors, 2026-11-14. These are single runs, not
 | Outbox drain of 2000 due rows (PostgreSQL 16 and RabbitMQ 3.13 in Testcontainers, three rounds) | 131, 216, 277 events/s | 872, 995, 915 events/s |
 | 100 sleeps of 2 ms on a virtual thread while 44 virtual threads verify a BCrypt hash | 1623 ms | 298 ms |
 | The 44 hashes of that same run | 1623 ms | 2485 ms |
+| `LoginCommandHandler` sequential (20 logins, Testcontainers Postgres) | p50 271.9 ms / p95 330.6 ms / p99 384.7 ms | p50 73.1 ms / p95 74.7 ms / p99 75.3 ms |
+| `LoginCommandHandler` concurrent burst (20 virtual threads, Testcontainers Postgres) | wall 1429 ms / p50 849.5 ms / p95 1424.6 ms | wall 322 ms / p50 195.7 ms / p95 310.7 ms |
 
-The scheduled relay of the test context was also polling during the outbox runs, in both columns. The last row is the cost: hashing throughput is bounded by the pool, half of the processors by default.
+The scheduled relay of the test context was also polling during the outbox runs, in both columns. Login latency dropped ~77% at p95 after switching the default BCrypt cost from 12 to 10 (`app.security.bcrypt-cost`), increasing `defaultThreads()` from `availableProcessors() / 2` to `availableProcessors() - 1` with `ArrayBlockingQueue` + pre-started threads, eliminating the redundant `SELECT` before `INSERT` on `RefreshTokenJpaEntity`, and caching the `RS256` `JwsHeader` in `JwtTokenIssuer`.
 
 ## Java 25 features considered
 
