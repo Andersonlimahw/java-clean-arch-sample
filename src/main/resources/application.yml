@@ -95,8 +95,11 @@ logging:
 
 app:
   security:
+    # BCrypt work factor (4-31). 10 (~60-80ms) balances OWASP recommendations and interactive API latency.
+    # Override via BCRYPT_COST=12 when stricter compliance is required.
+    bcrypt-cost: ${BCRYPT_COST:10}
     # Platform threads that run BCrypt, so hashing does not occupy virtual-thread carriers.
-    # 0 means half of the available processors, at least one.
+    # 0 means availableProcessors() - 1 (minimum 1).
     password-hashing-threads: ${PASSWORD_HASHING_THREADS:0}
   idempotency:
     cleanup-interval-ms: 3600000
