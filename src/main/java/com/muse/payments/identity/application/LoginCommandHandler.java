@@ -23,6 +23,7 @@ public class LoginCommandHandler implements CommandHandler<LoginCommand, AuthTok
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenIssuer jwtTokenIssuer;
     private final JwtProperties jwtProperties;
+    private final String dummyPasswordHash;
 
     public LoginCommandHandler(
             UserRepository userRepository,
@@ -36,6 +37,7 @@ public class LoginCommandHandler implements CommandHandler<LoginCommand, AuthTok
         this.passwordEncoder = Objects.requireNonNull(passwordEncoder);
         this.jwtTokenIssuer = Objects.requireNonNull(jwtTokenIssuer);
         this.jwtProperties = Objects.requireNonNull(jwtProperties);
+        this.dummyPasswordHash = passwordEncoder.encode(TokenHash.generateOpaqueToken());
     }
 
     /**
@@ -47,8 +49,13 @@ public class LoginCommandHandler implements CommandHandler<LoginCommand, AuthTok
         Objects.requireNonNull(command, "command cannot be null");
 
         String normalizedEmail = command.email().trim().toLowerCase(Locale.ROOT);
-        User user = userRepository.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
+        User user = userRepository.findByEmail(normalizedEmail).orElse(null);
+        if (user == null) {
+            // Spend the same BCrypt time as a real check so response time does not reveal
+            // whether the email exists (OWASP Authentication Cheat Sheet).
+            passwordEncoder.matches(command.password(), dummyPasswordHash);
+            throw new BadCredentialsException("Invalid email or password");
+        }
 
         if (!passwordEncoder.matches(command.password(), user.getPasswordHash())) {
             throw new BadCredentialsException("Invalid email or password");
