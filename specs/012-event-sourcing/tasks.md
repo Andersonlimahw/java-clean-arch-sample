@@ -2,6 +2,7 @@
 
 ## Spec
 - [x] Write `specs/012-event-sourcing/{spec.md,plan.md,tasks.md}` with owner decisions D1–D5.
+- [x] Add `scripts/db-reset.sh` (local reset + Flyway replay via migration-only mode, Redis flush, queue purge) and document it.
 - [ ] Review (Change Reviewer) and merge the spec to `main` before any code.
 
 ## Increment 0 — Kernel and migration rewrite

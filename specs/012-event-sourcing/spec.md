@@ -22,7 +22,7 @@ Make the append-only event stream the system of record for every aggregate, in s
 |---|---|
 | D1 | All modules are in scope: `payments` (`Payment`), `identity` (`User`, refresh-token family), `notifications` (`Notification`). |
 | D2 | Projection consistency is hybrid: synchronous for `payments`, `users`, `refresh_tokens`; asynchronous for `notifications` and the new `payment_history`. |
-| D3 | No backfill. The database is clean. Existing migrations may be rewritten and consolidated; the append-only Flyway rule from `000-master-plan.md` is lifted for this one rewrite and restored afterwards. |
+| D3 | No backfill. Every database is treated as new: existing migrations are rewritten to run from zero, and the append-only Flyway rule from `000-master-plan.md` is lifted for this one rewrite and restored afterwards. Local databases are reset with `scripts/db-reset.sh` (§8). |
 | D4 | Password hashes stay out of events. Credentials live in a state table (`user_credentials`) written in the same transaction as the identity events. |
 | D5 | The async side is exercised by `notifications` (already eventual via RabbitMQ) and a new `GET /api/v1/payments/{id}/history`. |
 
@@ -128,7 +128,9 @@ Domain events stay pure Java records in `<module>.domain`. Aggregates gain `appl
 - Rewrite into four consolidated, module-owned migrations: `V1__shared.sql` (outbox, processed_events, idempotency_keys with `lease_id`, event_store, snapshots, projection_checkpoints, immutability trigger), `V2__identity.sql` (users projection, user_credentials, refresh_tokens projection), `V3__payments.sql` (payments projection with screening/review columns and `idx_payments_user_created_at_id`, payment_history), `V4__notifications.sql`.
 - `V5`–`V7` and `V6__payments_list_index.sql.conf` are deleted; their effect is folded in. Indexes are created plainly; `CONCURRENTLY` is not needed on an empty schema.
 - After this rewrite merges, migrations are append-only again (new versions from `V5`).
-- Any existing local database has a different Flyway history: `docker compose down -v` (or `make clean`) is required once; documented in `docs/data.md` and the PR body. Testcontainers starts empty, so CI is unaffected. No shared or production database exists (README, ADR 0011).
+- **Premise (owner, 2026-11-15)**: every database is treated as new. Migrations are written to run from zero; there is no compatibility with an already-applied schema and no backfill.
+- Any existing local database has a different Flyway history (checksums and versions) and must be reset once with `scripts/db-reset.sh` (below) or `make clean`. Testcontainers starts empty, so CI is unaffected. No shared or production database exists (README, ADR 0011).
+- **`scripts/db-reset.sh`** (delivered with this spec, works for the current and the consolidated migrations): drops schema `public` on the local database, replays every migration through the application's own Flyway in migration-only mode (`APP_MIGRATION_ONLY=true mvn spring-boot:run`, the same path as the Kubernetes Job, so there is no second migration tool and `spring.flyway.clean-disabled` stays untouched), prints `flyway_schema_history`, and fails unless every `V*__*.sql` file is applied successfully. It refuses non-local hosts without `--allow-non-local`, requires `--yes` or a typed `RESET`, refuses while the Compose `app` service runs, reads connection settings from the environment/`.env`, and never prints credentials. By default it also runs Redis `FLUSHDB` (cached payments and rate-limit buckets would outlive the rows) and purges `payments.created.notifications` and its DLQ (queued events would create notifications for payments that no longer exist); `--db-only` skips both. Documented in `docs/data.md` and the README.
 
 ## 9. Risks
 
@@ -139,7 +141,8 @@ Domain events stay pure Java records in `<module>.domain`. Aggregates gain `appl
 | Email is immutable PII in `UserRegistered`; no erasure | Documented limitation for this sample (no real users). A later spec can add crypto-shredding. |
 | Event schema drift breaks replay | Registry + upcasters + stored JSON fixtures per version; ArchUnit forbids class names in `event_type`. |
 | Sync projector bug corrupts the read model | Rebuild mode; IT asserting replayed state equals the projection row for every aggregate. |
-| Rewritten migrations break someone's local DB | §8 one-time reset, called out in docs and PR. |
+| Rewritten migrations break someone's local DB | `scripts/db-reset.sh` one-time reset (§8), called out in docs and the increment 0 PR. |
+| Reset script pointed at the wrong database | Local-host allowlist, `--yes`/typed confirmation, refusal while `app` runs; the script never targets anything but `DB_URL`. |
 | Two write paths during transition (row save vs append) | Each increment migrates one aggregate completely; ArchUnit rule that only projectors write projection repositories. |
 | Snapshot schema change | Snapshots with non-current `schema_version` are ignored. |
 

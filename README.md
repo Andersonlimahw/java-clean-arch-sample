@@ -165,6 +165,10 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
 For comprehensive architecture decisions, performance tuning, and operational runbooks, browse the complete documentation index at [docs/README.md](docs/README.md) or the machine-readable inventory at [docs/llms.txt](docs/llms.txt).
 
+### Resetting the local database
+
+`scripts/db-reset.sh` drops the local schema, replays all Flyway migrations from zero through the migration-only mode below, and clears local Redis and the notification queues. It is destructive, refuses non-local hosts, and needs `--yes` (or a typed `RESET`). Stop the app first. Run it once after pulling a change that rewrites migrations. Details: [docs/data.md](docs/data.md#resetting-the-local-database).
+
 ### Kubernetes migration Job
 
 The Job in `deploy/k8s/base/flyway-job.yaml` is named `payments-flyway-migration` and sets `APP_MIGRATION_ONLY=true`. The process applies Flyway, does not serve HTTP, and does not start Rabbit consumers or the outbox scheduler. It exits `0` only after migrations are applied and nothing is pending, and exits non-zero if startup or Flyway fails. Replicas inherit `SPRING_FLYWAY_ENABLED=false` from the ConfigMap and leave `APP_MIGRATION_ONLY` unset, so they do not migrate and they keep serving traffic.

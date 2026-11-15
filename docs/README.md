@@ -19,7 +19,7 @@ Start here for project guidance:
 | [Postman](postman.md) | Ordered requests, collection variables, token rotation, payload tests, optional fraud review, and Newman. |
 | [Postman execution evidence](test-plans/postman-validation.md) | Real local run: 30 requests, 105 assertions, fraud-review fixtures, and persistence limits. |
 | [Refactor gate evidence](test-plans/refactor-validation.md) | Strict local CI, 110 unit tests, 44 integration tests, and the outbox query test race fix. |
-| [Data model](data.md) | Flyway V1–V7, indexes, constraints, and the concurrent V6 index migration. |
+| [Data model](data.md) | Flyway V1–V7, indexes, constraints, the concurrent V6 index migration, and the local reset + Flyway replay script. |
 | [Resilience](resilience.md) | Fraud-screening retry, circuit breaker, bulkhead, time limiter, fallbacks, and review policy. |
 | [Concurrency](concurrency.md) | Optimistic locking, transient database locks, virtual threads, cache stampede protection, and outbox claims. |
 | [Testing](testing.md) | Unit/integration test commands, Testcontainers, macOS + Colima, Newman, and k6. |

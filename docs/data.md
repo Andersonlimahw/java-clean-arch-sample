@@ -1,7 +1,7 @@
 ---
 title: Data Model
 status: active
-updated: 2026-11-13
+updated: 2026-11-15
 related: [architecture.md, concurrency.md, testing.md]
 ---
 
@@ -51,6 +51,26 @@ V6 uses `CREATE INDEX CONCURRENTLY` so normal payment inserts, updates, and dele
 
 The migration has no `IF NOT EXISTS`. If a concurrent build fails, PostgreSQL may leave an invalid index with the target name. Remove that invalid index with `DROP INDEX CONCURRENTLY idx_payments_user_created_at_id` before retrying the migration. Do not edit V6 after it has been applied to a shared database.
 
+## Resetting the local database
+
+`scripts/db-reset.sh` wipes the local development database and replays every migration from zero. Use it after migrations are rewritten (spec 012 consolidates `V1`–`V7`) or whenever local data should start clean.
+
+```bash
+docker compose stop app            # or stop the host JVM
+scripts/db-reset.sh                # prompts: type RESET
+scripts/db-reset.sh --yes          # non-interactive
+scripts/db-reset.sh --yes --db-only  # leave Redis and RabbitMQ alone
+```
+
+What it does:
+
+1. Drops and recreates schema `public` on the database in `DB_URL` (psql inside the Compose `postgres` service, or host `psql` when Compose is not running).
+2. Replays migrations with the application's own Flyway: `APP_MIGRATION_ONLY=true mvn spring-boot:run`, the same migration-only path as the Kubernetes Job. No Flyway Maven plugin is involved and `spring.flyway.clean-disabled` is not changed.
+3. Prints `flyway_schema_history` and exits non-zero unless every `V*__*.sql` file is applied successfully.
+4. Unless `--db-only`: Redis `FLUSHDB` (cached payments and rate-limit buckets would outlive the deleted rows) and purge of `payments.created.notifications` and its DLQ (queued events would create notifications for payments that no longer exist).
+
+Safety: it refuses a `DB_URL` host other than `localhost`, `127.0.0.1`, `::1`, `postgres`, or `payments-postgres` unless `--allow-non-local` is passed; requires `--yes` when stdin is not a terminal; refuses while the Compose `app` service runs; reads settings from the environment, then `.env` (environment wins); and never prints credentials. Set `COMPOSE_PROJECT_NAME` to target a Compose project other than `payments`.
+
 ## Code and migration note
 
 The V6 SQL comment says no payment query filters by status. Current code does filter by status: `ListHeldPaymentsQueryHandler` calls `PaymentRepository.findByStatus(UNDER_REVIEW, ...)`, backed by `PaymentJpaRepository.findByStatus`. Since V6 drops `idx_payments_user_status` and no replacement status index is created, the held-payment list has no status-specific index. This page records the current schema and code; it does not change the query or migration.
@@ -66,6 +86,7 @@ The V6 SQL comment says no payment query filters by status. Current code does fi
 
 ```bash
 rtk mvn -q -Dtest=MigrationOnlyModeTest,JavaVersionPinsTest test
+DB_URL=jdbc:postgresql://db.example.com:5432/payments DB_PASSWORD=x scripts/db-reset.sh --yes; echo $?
 ```
 
-Expected result: migration-only startup and version pins remain valid.
+Expected result: migration-only startup and version pins remain valid; the reset script refuses the non-local host and prints exit code `1`.
