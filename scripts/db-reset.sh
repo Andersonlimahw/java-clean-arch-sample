@@ -59,6 +59,9 @@ export DB_URL DB_USER DB_PASSWORD
 if [[ ! "$DB_URL" =~ ^jdbc:postgresql://(\[[^]]+\]|[^/:?]+)(:([0-9]+))?/([^?]+) ]]; then
   fail "DB_URL is not a jdbc:postgresql://host[:port]/database URL"
 fi
+if [[ "$DB_URL" == *"currentSchema="* ]]; then
+  fail "DB_URL with currentSchema is not supported (script resets schema 'public' only)"
+fi
 DB_HOST="${BASH_REMATCH[1]}"
 DB_PORT="${BASH_REMATCH[3]:-5432}"
 DB_DATABASE="${BASH_REMATCH[4]}"
@@ -82,19 +85,32 @@ fi
 
 service_running() {
   [[ ${#COMPOSE[@]} -gt 0 ]] || return 1
-  "${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -qx "$1"
+  local running
+  running="$("${COMPOSE[@]}" ps --status running --services 2>/dev/null || true)"
+  grep -qx "$1" <<<"$running"
+}
+
+compose_targets_host_port() {
+  local service="$1" internal_port="$2" host="$3" port="$4"
+  case "$host" in
+    localhost|127.0.0.1|::1|\[::1\]) ;;
+    *) return 1 ;;
+  esac
+  local published
+  published="$("${COMPOSE[@]}" port "$service" "$internal_port" 2>/dev/null || true)"
+  [[ -n "$published" && "$published" == *":$port" ]]
 }
 
 if service_running app; then
   fail "the Compose 'app' service is running; stop it first (docker compose stop app)"
 fi
 
-if service_running postgres; then
+if service_running postgres && compose_targets_host_port postgres 5432 "$DB_HOST" "$DB_PORT"; then
   PSQL_MODE=compose
 elif command -v psql >/dev/null 2>&1; then
   PSQL_MODE=host
 else
-  fail "no running Compose 'postgres' service and no psql on PATH"
+  fail "no running Compose 'postgres' matching $DB_HOST:$DB_PORT and no psql on PATH"
 fi
 
 run_psql() {
@@ -122,6 +138,11 @@ fi
 
 command -v mvn >/dev/null 2>&1 || fail "mvn is required to replay migrations"
 
+active_conns="$(run_psql -At -c "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend';")"
+if [[ "${active_conns:-0}" -gt 0 ]]; then
+  fail "$active_conns active PostgreSQL session(s) on '$DB_DATABASE'; stop the app/IDE/other clients first"
+fi
+
 info "1. Dropping schema public"
 run_psql -c "SET client_min_messages = warning; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
 echo "    ✓ schema public recreated"
@@ -129,7 +150,8 @@ echo "    ✓ schema public recreated"
 info "2. Replaying Flyway migrations (APP_MIGRATION_ONLY=true mvn spring-boot:run)"
 LOG_FILE="$(mktemp "${TMPDIR:-/tmp}/payments-db-reset.XXXXXX")"
 trap 'rm -f "$LOG_FILE"' EXIT
-if ! APP_MIGRATION_ONLY=true mvn -B -q spring-boot:run >"$LOG_FILE" 2>&1; then
+if ! env -u SPRING_DATASOURCE_URL -u SPRING_DATASOURCE_USERNAME -u SPRING_DATASOURCE_PASSWORD \
+  APP_MIGRATION_ONLY=true mvn -B -q spring-boot:run >"$LOG_FILE" 2>&1; then
   tail -n 40 "$LOG_FILE" >&2
   fail "migration-only run failed"
 fi
@@ -149,19 +171,23 @@ if [[ "$DB_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
+REDIS_HOST="${REDIS_HOST:-localhost}"
+REDIS_PORT="${REDIS_PORT:-6379}"
 info "4. Flushing local Redis database"
-if service_running redis; then
+if service_running redis && compose_targets_host_port redis 6379 "$REDIS_HOST" "$REDIS_PORT"; then
   REDISCLI_AUTH="${REDIS_PASSWORD:-}" "${COMPOSE[@]}" exec -T -e REDISCLI_AUTH redis \
     redis-cli --no-auth-warning FLUSHDB | grep -qx OK || fail "redis FLUSHDB failed (check REDIS_PASSWORD)"
   echo "    ✓ Redis FLUSHDB"
 else
-  echo "    - Compose 'redis' not running; skipped"
+  echo "    - skipping Redis ($REDIS_HOST:$REDIS_PORT does not match running Compose 'redis')"
 fi
 
+RABBITMQ_HOST="${RABBITMQ_HOST:-localhost}"
+RABBITMQ_PORT="${RABBITMQ_PORT:-5672}"
 info "5. Purging notification queues"
 # Queue names: shared.infrastructure.messaging.RabbitMqConfig.
 QUEUES=(payments.created.notifications payments.created.notifications.dlq)
-if service_running rabbitmq; then
+if service_running rabbitmq && compose_targets_host_port rabbitmq 5672 "$RABBITMQ_HOST" "$RABBITMQ_PORT"; then
   VHOST="${RABBITMQ_VHOST:-/}"
   existing="$("${COMPOSE[@]}" exec -T rabbitmq rabbitmqctl -q list_queues -p "$VHOST" name --no-table-headers)"
   for queue in "${QUEUES[@]}"; do
@@ -173,7 +199,7 @@ if service_running rabbitmq; then
     fi
   done
 else
-  echo "    - Compose 'rabbitmq' not running; skipped"
+  echo "    - skipping RabbitMQ ($RABBITMQ_HOST:$RABBITMQ_PORT does not match running Compose 'rabbitmq')"
 fi
 
 echo "Done."
