@@ -31,7 +31,7 @@ Local machine, JDK 25.0.1, 11 processors, 2026-11-14. These are single runs, not
 | `LoginCommandHandler` sequential (20 logins, Testcontainers Postgres) | p50 271.9 ms / p95 330.6 ms / p99 384.7 ms | p50 73.1 ms / p95 74.7 ms / p99 75.3 ms |
 | `LoginCommandHandler` concurrent burst (20 virtual threads, Testcontainers Postgres) | wall 1429 ms / p50 849.5 ms / p95 1424.6 ms | wall 322 ms / p50 195.7 ms / p95 310.7 ms |
 
-The scheduled relay of the test context was also polling during the outbox runs, in both columns. Login latency dropped ~77% at p95 after switching the default BCrypt cost from 12 to 10 (`app.security.bcrypt-cost`), increasing `defaultThreads()` from `availableProcessors() / 2` to `availableProcessors() - 1` with `ArrayBlockingQueue` + pre-started threads, eliminating the redundant `SELECT` before `INSERT` on `RefreshTokenJpaEntity`, and caching the `RS256` `JwsHeader` in `JwtTokenIssuer`.
+The scheduled relay of the test context was also polling during the outbox runs, in both columns. Login latency dropped ~77% at p95 after switching the default BCrypt cost from 12 to 10 (`app.security.bcrypt-cost`), increasing `defaultThreads()` from `availableProcessors() / 2` to `availableProcessors() - 1` with `ArrayBlockingQueue` + pre-started threads, eliminating the redundant `SELECT` before `INSERT` on `RefreshTokenJpaEntity`, and caching the `RS256` `JwsHeader` in `JwtTokenIssuer`. A re-run after the review fixes (2026-11-15, full suite in the same JVM) measured sequential p50 78.8 ms / p95 95.9 ms / p99 165.2 ms and burst wall 220 ms / p95 219.5 ms; run-to-run variance on a shared laptop is tens of milliseconds.
 
 ## Java 25 features considered
 
@@ -44,6 +44,8 @@ The scheduled relay of the test context was also polling during the outbox runs,
 
 ## Consequences
 
+- Hashes stored at cost 12 still verify (bcrypt reads the cost from the hash) and keep their slower check; `upgradeEncoding` never lowers a cost, so they are not rehashed.
+- Login with an unknown email verifies the password against a dummy hash created at startup, so response time does not reveal whether the account exists.
 - A failure between the user read and the refresh-token insert in login leaves no partial state: the insert is the only write.
 - Login and register throughput is limited by the hashing pool instead of by the carriers and the connection pool. Raise `app.security.password-hashing-threads` when authentication is the dominant load.
 - During an outbox publish the relay holds leases on up to 50 rows. An interrupt or crash delays the unconfirmed rows of that batch by the lease (confirm timeout plus 10 seconds) instead of one row.
@@ -53,6 +55,6 @@ The scheduled relay of the test context was also polling during the outbox runs,
 
 | Option | Why not |
 |---|---|
-| Lower the BCrypt cost | Weakens stored hashes to save CPU. |
+| Keep BCrypt cost 12 as the default | ~4x the CPU per login for every interactive request. Cost 10 is the OWASP Password Storage Cheat Sheet minimum for bcrypt; deployments with stricter requirements set `BCRYPT_COST=12`. |
 | Publish each outbox row on its own virtual thread | Still two transactions per row, and events of one aggregate could overtake each other inside one relay. |
 | Larger connection pool | Hides the connection held during hashing and moves the limit to PostgreSQL. |
