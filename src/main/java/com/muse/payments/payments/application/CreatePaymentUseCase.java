@@ -21,6 +21,7 @@ public class CreatePaymentUseCase {
     private final IdempotencyPort idempotencyPort;
     private final FraudScreeningPort fraudScreeningPort;
     private final ScreenedPaymentRecorder recorder;
+    private final ProviderPaymentInitiator initiateProviderPayment;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
 
@@ -28,12 +29,14 @@ public class CreatePaymentUseCase {
             IdempotencyPort idempotencyPort,
             FraudScreeningPort fraudScreeningPort,
             ScreenedPaymentRecorder recorder,
+            ProviderPaymentInitiator initiateProviderPayment,
             TransactionTemplate transactionTemplate,
             ObjectMapper objectMapper
     ) {
         this.idempotencyPort = Objects.requireNonNull(idempotencyPort);
         this.fraudScreeningPort = Objects.requireNonNull(fraudScreeningPort);
         this.recorder = Objects.requireNonNull(recorder);
+        this.initiateProviderPayment = Objects.requireNonNull(initiateProviderPayment);
         this.transactionTemplate = Objects.requireNonNull(transactionTemplate);
         this.objectMapper = Objects.requireNonNull(objectMapper);
     }
@@ -80,6 +83,7 @@ public class CreatePaymentUseCase {
                 }
                 return body;
             });
+            initiateProviderPayment.initiate(paymentId);
             return new CreatePaymentResult.Created(response);
         } catch (RuntimeException ex) {
             try {

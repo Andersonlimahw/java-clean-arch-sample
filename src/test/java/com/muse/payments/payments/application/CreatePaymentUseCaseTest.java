@@ -76,6 +76,7 @@ class CreatePaymentUseCaseTest {
                 idempotency,
                 port,
                 new ScreenedPaymentRecorder(payments, outbox),
+                paymentId -> { },
                 new TransactionTemplate(directTransactions()),
                 new ObjectMapper().registerModule(new JavaTimeModule())
         );

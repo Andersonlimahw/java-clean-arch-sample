@@ -1,7 +1,7 @@
 ---
 title: HTTP API
 status: active
-updated: 2026-11-15
+updated: 2026-11-18
 related: [architecture.md, rules/api-auth-context.md, testing.md]
 ---
 
@@ -28,6 +28,7 @@ For protected endpoints, use Swagger UI's **Authorize** control or send `Authori
 | `POST` | `/api/v1/payments/{id}/review` | `ADMIN` or `FRAUD_REVIEWER`, not payment owner | Requires query parameter `decision=APPROVE` or `decision=REJECT`. Reviews an `UNDER_REVIEW` payment; returns `200`. Approval moves it to `PENDING`; rejection cancels it. |
 | `POST` | `/api/v1/payments/{id}/cancel?reason={text}` | `USER` or `ADMIN`, payment owner | Cancels a `PENDING` or `UNDER_REVIEW` payment; `reason` is optional and has a server default; returns `200`. |
 | `GET` | `/api/v1/notifications` | Any authenticated user | Lists only the caller's notifications; returns `200`. |
+| `POST` | `/api/v1/webhooks/payments/{provider}` | Provider signature | Receives a signed PSP callback. The provider HMAC signature is the authentication, so the route is public. Verifies the signature and timestamp, deduplicates by provider event id, and settles the payment; returns `200` with `COMPLETED`, `CANCELLED`, `IGNORED`, or `DUPLICATE`. Invalid signatures, stale timestamps, and malformed payloads are `400`; an unregistered provider is `404`. |
 
 In `local` and `test` profiles (`app.security.expose-public-docs-and-metrics=true`), `/v3/api-docs/**`, `/swagger-ui/**`, `/actuator/prometheus`, and `/actuator/metrics/**` are public. On the `prod` profile, Springdoc is disabled by default and those endpoints require `ROLE_ADMIN`, while `/actuator/health/**` and `/actuator/info` remain public for platform probes. Authentication endpoints enforce atomic Redis per-IP (`20/min`) and per-account (`15/min` on login, hashed with SHA-256) rate limits, and `POST /api/v1/payments/**` mutations enforce a per-user write rate limit (`120/min`) returning `429` with `Retry-After: 60`.
 

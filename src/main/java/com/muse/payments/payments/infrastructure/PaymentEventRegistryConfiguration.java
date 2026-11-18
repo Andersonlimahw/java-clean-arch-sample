@@ -4,6 +4,7 @@ import com.muse.payments.payments.domain.PaymentCancelledEvent;
 import com.muse.payments.payments.domain.PaymentCompletedEvent;
 import com.muse.payments.payments.domain.PaymentHeldForReviewEvent;
 import com.muse.payments.payments.domain.PaymentInitiatedEvent;
+import com.muse.payments.payments.domain.PaymentProviderIntentCreatedEvent;
 import com.muse.payments.payments.domain.PaymentRejectedInReviewEvent;
 import com.muse.payments.payments.domain.PaymentReleasedFromReviewEvent;
 import com.muse.payments.shared.application.EventTypeRegistration;
@@ -43,5 +44,11 @@ public class PaymentEventRegistryConfiguration {
     @Bean
     EventTypeRegistration paymentCancelledRegistration() {
         return new EventTypeRegistration("payments.payment-cancelled", 1, PaymentCancelledEvent.class);
+    }
+
+    @Bean
+    EventTypeRegistration paymentProviderIntentCreatedRegistration() {
+        return new EventTypeRegistration(
+                "payments.payment-provider-intent-created", 1, PaymentProviderIntentCreatedEvent.class);
     }
 }

@@ -24,6 +24,8 @@ public class Payment extends EventSourcedAggregate<UUID> {
     private String heldReason;
     private UUID reviewerId;
     private Instant reviewedAt;
+    private String provider;
+    private String providerReference;
 
     private Payment() {
     }
@@ -140,6 +142,56 @@ public class Payment extends EventSourcedAggregate<UUID> {
         raise(new PaymentCompletedEvent(this.id, this.userId));
     }
 
+    /**
+     * Records the provider intent returned after the payment was created. Only a pending
+     * payment is sent to a provider, and only once; the idempotency key at the provider is
+     * the payment id.
+     */
+    public void recordProviderIntent(String provider, String providerReference) {
+        if (this.status != PaymentStatus.PENDING) {
+            throw new ConflictException("Cannot open a provider intent for a payment in status: " + this.status);
+        }
+        if (this.providerReference != null) {
+            throw new ConflictException("Payment already has a provider intent");
+        }
+        if (provider == null || provider.isBlank() || providerReference == null || providerReference.isBlank()) {
+            throw new ConflictException("Provider and provider reference are required");
+        }
+        raise(new PaymentProviderIntentCreatedEvent(this.id, provider, providerReference));
+    }
+
+    /**
+     * Settles the payment from a verified provider callback. The provider and reference must
+     * match the recorded intent, so a valid signature for one intent cannot settle another
+     * payment. A repeated success is a no-op; a held payment stays held for a reviewer; a
+     * completed payment is never cancelled retroactively.
+     */
+    public void settleFromProvider(String provider, String providerReference, boolean succeeded, String reason) {
+        if (this.provider == null || this.providerReference == null) {
+            throw new ConflictException("Payment has no provider intent");
+        }
+        if (!this.provider.equals(provider) || !this.providerReference.equals(providerReference)) {
+            throw new ConflictException("Provider reference does not match the payment");
+        }
+        if (this.status == PaymentStatus.UNDER_REVIEW) {
+            throw new ConflictException("Payment is held for review and cannot be settled by a provider callback");
+        }
+        if (this.status == PaymentStatus.COMPLETED) {
+            if (succeeded) {
+                return;
+            }
+            throw new ConflictException("Cannot cancel a completed payment");
+        }
+        if (this.status == PaymentStatus.CANCELLED) {
+            throw new ConflictException("Payment is cancelled");
+        }
+        if (succeeded) {
+            complete();
+        } else {
+            cancel(reason);
+        }
+    }
+
     public void cancel(String reason) {
         if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.UNDER_REVIEW) {
             throw new ConflictException("Cannot cancel payment in status: " + this.status);
@@ -203,6 +255,12 @@ public class Payment extends EventSourcedAggregate<UUID> {
                 this.updatedAt = e.occurredAt();
                 this.projectionVersion = null;
             }
+            case PaymentProviderIntentCreatedEvent e -> {
+                this.provider = e.provider();
+                this.providerReference = e.providerReference();
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
             default -> throw new IllegalArgumentException("Unsupported payment event: " + event.getClass().getName());
         }
     }
@@ -261,5 +319,13 @@ public class Payment extends EventSourcedAggregate<UUID> {
 
     public Instant getReviewedAt() {
         return reviewedAt;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public String getProviderReference() {
+        return providerReference;
     }
 }

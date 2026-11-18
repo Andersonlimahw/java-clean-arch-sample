@@ -5,6 +5,7 @@ import com.muse.payments.payments.domain.PaymentCancelledEvent;
 import com.muse.payments.payments.domain.PaymentCompletedEvent;
 import com.muse.payments.payments.domain.PaymentHeldForReviewEvent;
 import com.muse.payments.payments.domain.PaymentInitiatedEvent;
+import com.muse.payments.payments.domain.PaymentProviderIntentCreatedEvent;
 import com.muse.payments.payments.domain.PaymentRejectedInReviewEvent;
 import com.muse.payments.payments.domain.PaymentReleasedFromReviewEvent;
 import com.muse.payments.payments.domain.PaymentStatus;
@@ -83,6 +84,11 @@ public class PaymentHistoryProjector implements AsyncProjector {
                     PaymentStatus.CANCELLED,
                     actorOrDefault(metadataActor, e.userId().toString()),
                     OutboundText.limit(e.reason())
+            );
+            case PaymentProviderIntentCreatedEvent e -> new Entry(
+                    PaymentStatus.PENDING,
+                    metadataActor,
+                    null
             );
             default -> throw new IllegalArgumentException(
                     "Unsupported payment event for history projection: " + storedEvent.event().getClass().getName());

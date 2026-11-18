@@ -1,7 +1,7 @@
 ---
 title: Data Model
 status: active
-updated: 2026-11-17
+updated: 2026-11-18
 related: [architecture.md, concurrency.md, testing.md]
 ---
 
@@ -20,6 +20,8 @@ PostgreSQL is the system of record. Flyway migrations run in version order from 
 | V5 | `V5__payment_history.sql` | Creates the asynchronous payment timeline. |
 | V6 | `V6__user_credentials.sql` | Separates password hashes from user facts and the user projection. |
 | V7 | `V7__independent_identity_projections.sql` | Removes the refresh-token-to-user read-model FK so each projection rebuilds independently. |
+| V8 | `V8__operational_retention_indexes.sql` | Adds the retention indexes used by the scheduled pruning jobs. |
+| V9 | `V9__payment_provider_webhooks.sql` | Adds the provider link (`provider`, `provider_reference`) to `payments` and the `payment_provider_events` dedupe table. |
 
 These migrations replace the former V1–V7 history for the clean-database Event Sourcing rollout. The local reset script removes the old schema and replays the consolidated migrations; it does not backfill existing rows.
 
@@ -45,6 +47,9 @@ There are no cross-module foreign keys. V7 removes the original intra-module ref
 | V2 | `idx_refresh_tokens_hash` | `(token_hash)` | Intended to support hashed-token lookup; it duplicates the index created by the unique `token_hash` constraint. |
 | V3 | `payments` primary key | `(id)` | Payment identity and direct lookup. |
 | V3 | `idx_payments_user_created_at_id` | `(user_id, created_at DESC, id DESC)` | Supports owner-scoped payment pages and deterministic tie-breaking. PostgreSQL can scan it backward for ascending order. |
+| V9 | `uq_payments_provider_reference` | `(provider, provider_reference) WHERE provider_reference IS NOT NULL` | Keeps one local payment per provider intent; partial so unlinked payments are unaffected. |
+| V9 | `payment_provider_events` primary key | `(provider, event_id)` | Deduplicates provider callback deliveries. |
+| V9 | `idx_payment_provider_events_received_at` | `(received_at)` | Supports bounded retention pruning of the callback ledger. |
 | V4 | `notifications` primary key | `(id)` | Notification identity. |
 | V4 | `idx_notifications_user_id` | `(user_id, created_at DESC)` | Supports the caller-scoped notification query ordered newest first. |
 

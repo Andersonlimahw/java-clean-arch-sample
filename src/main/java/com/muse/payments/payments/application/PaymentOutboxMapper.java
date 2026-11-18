@@ -4,6 +4,7 @@ import com.muse.payments.payments.domain.PaymentCancelledEvent;
 import com.muse.payments.payments.domain.PaymentCompletedEvent;
 import com.muse.payments.payments.domain.PaymentHeldForReviewEvent;
 import com.muse.payments.payments.domain.PaymentInitiatedEvent;
+import com.muse.payments.payments.domain.PaymentProviderIntentCreatedEvent;
 import com.muse.payments.payments.domain.PaymentRejectedInReviewEvent;
 import com.muse.payments.payments.domain.PaymentReleasedFromReviewEvent;
 import com.muse.payments.shared.application.IntegrationEvent;
@@ -104,6 +105,19 @@ public final class PaymentOutboxMapper {
                             "paymentId", rejected.paymentId(),
                             "userId", rejected.userId(),
                             "reason", text(OutboundText.limit(rejected.reason()))
+                    ),
+                    Map.of("aggregateType", "Payment")
+            );
+        }
+        if (event instanceof PaymentProviderIntentCreatedEvent intent) {
+            return IntegrationEvent.create(
+                    "Payment",
+                    intent.paymentId(),
+                    "PaymentProviderIntentCreated",
+                    Map.of(
+                            "paymentId", intent.paymentId(),
+                            "provider", intent.provider(),
+                            "providerReference", intent.providerReference()
                     ),
                     Map.of("aggregateType", "Payment")
             );
