@@ -140,6 +140,18 @@ app:
     connect-timeout: 300ms
     # Longer than the time limiter so a cancelled attempt is released by interrupt, not by this timeout.
     read-timeout: 3s
+  psp:
+    default-provider: ${PSP_DEFAULT_PROVIDER:stripe}
+    stripe:
+      enabled: ${STRIPE_ENABLED:true}
+      base-url: ${STRIPE_BASE_URL:http://localhost:12111}
+      api-key: ${STRIPE_API_KEY:sk_test_local}
+      # Well-known local default only. Startup fails on the prod profile while it is unchanged.
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_local_dev_only}
+      # Replay window; Stripe's own libraries default to five minutes.
+      webhook-tolerance: ${STRIPE_WEBHOOK_TOLERANCE:5m}
+      connect-timeout: 300ms
+      read-timeout: 3s
 
 springdoc:
   api-docs:

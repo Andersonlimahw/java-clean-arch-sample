@@ -74,7 +74,8 @@ public class SecurityConfig {
                     } else {
                         auth.requestMatchers(DOCS_AND_METRICS_PATHS).hasRole("ADMIN");
                     }
-                    auth.requestMatchers(HttpMethod.POST, "/api/v1/payments/*/review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/webhooks/**").permitAll()
+                            .requestMatchers(HttpMethod.POST, "/api/v1/payments/*/review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
                             .requestMatchers(HttpMethod.GET, "/api/v1/payments/under-review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
                             .requestMatchers(HttpMethod.GET, "/api/v1/payments/*/history").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")
                             .requestMatchers(HttpMethod.GET, "/api/v1/payments/*").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")

@@ -5,6 +5,7 @@ import com.muse.payments.payments.domain.PaymentCancelledEvent;
 import com.muse.payments.payments.domain.PaymentCompletedEvent;
 import com.muse.payments.payments.domain.PaymentHeldForReviewEvent;
 import com.muse.payments.payments.domain.PaymentInitiatedEvent;
+import com.muse.payments.payments.domain.PaymentProviderIntentCreatedEvent;
 import com.muse.payments.payments.domain.PaymentRejectedInReviewEvent;
 import com.muse.payments.payments.domain.PaymentReleasedFromReviewEvent;
 import com.muse.payments.payments.domain.PaymentStatus;
@@ -66,6 +67,12 @@ public class PaymentProjector implements SyncProjector<DomainEvent>, Rebuildable
     private static final String UPDATE_STATUS = """
             UPDATE payments
             SET status = ?, updated_at = ?, version = ?
+            WHERE id = ?
+            """;
+
+    private static final String UPDATE_PROVIDER_INTENT = """
+            UPDATE payments
+            SET provider = ?, provider_reference = ?, updated_at = ?, version = ?
             WHERE id = ?
             """;
 
@@ -162,6 +169,14 @@ public class PaymentProjector implements SyncProjector<DomainEvent>, Rebuildable
             case PaymentCancelledEvent e -> jdbcTemplate.update(
                     UPDATE_STATUS,
                     PaymentStatus.CANCELLED.name(),
+                    Timestamp.from(e.occurredAt()),
+                    projectionVersion,
+                    e.paymentId()
+            );
+            case PaymentProviderIntentCreatedEvent e -> jdbcTemplate.update(
+                    UPDATE_PROVIDER_INTENT,
+                    e.provider(),
+                    e.providerReference(),
                     Timestamp.from(e.occurredAt()),
                     projectionVersion,
                     e.paymentId()
