@@ -20,14 +20,17 @@ spec:
       labels:
         app.kubernetes.io/name: payments-platform
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
         fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
-          image: payments-platform:latest
+          image: payments-platform:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

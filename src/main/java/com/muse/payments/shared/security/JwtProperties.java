@@ -10,8 +10,11 @@ public record JwtProperties(
         String audience,
         Duration accessTokenTtl,
         Duration refreshTokenTtl,
+        String keyId,
         String privateKeyPem,
-        String publicKeyPem
+        String publicKeyPem,
+        String previousKeyId,
+        String previousPublicKeyPem
 ) {
     public JwtProperties {
         if (issuer == null || issuer.isBlank()) {
@@ -25,6 +28,12 @@ public record JwtProperties(
         }
         if (refreshTokenTtl == null) {
             refreshTokenTtl = Duration.ofDays(7);
+        }
+        if (keyId == null || keyId.isBlank()) {
+            keyId = "payments-jwt-key-v1";
+        }
+        if (previousKeyId == null || previousKeyId.isBlank()) {
+            previousKeyId = "payments-jwt-key-v0";
         }
     }
 }

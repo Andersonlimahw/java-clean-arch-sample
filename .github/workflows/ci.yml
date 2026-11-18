@@ -19,6 +19,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Validate Documentation and AI Tooling
+        run: |
+          bash scripts/validate-docs.sh
+          python3 -I scripts/validate-ai-tooling.py
+
       - name: Build and Test with Maven
         run: mvn -B clean verify
 
@@ -29,15 +34,26 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          load: true
           push: false
           tags: payments-platform:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Scan Container Image with Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: 'payments-platform:test'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
       - name: Validate Docker Compose Configuration
         run: |
-          docker compose config
-          docker compose -f docker-compose.yml -f docker-compose.debug.yml config
+          docker compose config > /dev/null
+          docker compose -f docker-compose.yml -f docker-compose.debug.yml config > /dev/null
 
       - name: Validate Kubernetes Manifests with Kubeconform
         run: |

@@ -1,7 +1,7 @@
 ---
 title: Data Model
 status: active
-updated: 2026-11-15
+updated: 2026-11-17
 related: [architecture.md, concurrency.md, testing.md]
 ---
 

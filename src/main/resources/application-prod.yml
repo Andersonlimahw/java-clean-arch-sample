@@ -15,7 +15,15 @@ management:
     tracing:
       endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:${OTEL_EXPORTER_OTLP_ENDPOINT:}}
 
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
+
 app:
+  security:
+    expose-public-docs-and-metrics: ${EXPOSE_PUBLIC_DOCS_AND_METRICS:false}
   fraud-screening:
     # No default. Boot fails when FRAUD_SCREENING_BASE_URL is missing. The scheme must be https.
     base-url: ${FRAUD_SCREENING_BASE_URL}

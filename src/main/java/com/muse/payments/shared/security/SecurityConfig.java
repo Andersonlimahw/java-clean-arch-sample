@@ -1,7 +1,6 @@
 package com.muse.payments.shared.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.muse.payments.shared.web.CorrelationContext;
 import com.muse.payments.shared.web.GlobalExceptionHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -9,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -16,7 +16,6 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -30,7 +29,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
 import java.io.IOException;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -40,6 +38,16 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private static final String[] DOCS_AND_METRICS_PATHS = {
+            "/actuator/prometheus",
+            "/actuator/metrics",
+            "/actuator/metrics/**",
+            "/v3/api-docs",
+            "/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html"
+    };
+
     private final ObjectMapper objectMapper;
 
     public SecurityConfig(ObjectMapper objectMapper) {
@@ -47,28 +55,32 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            @Value("${app.security.expose-public-docs-and-metrics:true}") boolean exposePublicDocsAndMetrics
+    ) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/error",
-                                "/api/v1/auth/**",
-                                "/actuator/health/**",
-                                "/actuator/info",
-                                "/actuator/prometheus",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/*/review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/under-review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/*/history").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/*").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")
-                        .requestMatchers("/api/v1/payments", "/api/v1/payments/**").hasAnyRole("USER", "ADMIN")
-                        .anyRequest().authenticated()
-                )
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(
+                            "/error",
+                            "/api/v1/auth/**",
+                            "/actuator/health/**",
+                            "/actuator/info"
+                    ).permitAll();
+                    if (exposePublicDocsAndMetrics) {
+                        auth.requestMatchers(DOCS_AND_METRICS_PATHS).permitAll();
+                    } else {
+                        auth.requestMatchers(DOCS_AND_METRICS_PATHS).hasRole("ADMIN");
+                    }
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/payments/*/review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
+                            .requestMatchers(HttpMethod.GET, "/api/v1/payments/under-review").hasAnyRole("ADMIN", "FRAUD_REVIEWER")
+                            .requestMatchers(HttpMethod.GET, "/api/v1/payments/*/history").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")
+                            .requestMatchers(HttpMethod.GET, "/api/v1/payments/*").hasAnyRole("USER", "ADMIN", "FRAUD_REVIEWER")
+                            .requestMatchers("/api/v1/payments", "/api/v1/payments/**").hasAnyRole("USER", "ADMIN")
+                            .anyRequest().authenticated();
+                })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(problemAuthenticationEntryPoint())
                         .accessDeniedHandler(problemAccessDeniedHandler())

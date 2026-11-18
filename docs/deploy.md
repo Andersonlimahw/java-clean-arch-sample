@@ -1,7 +1,7 @@
 ---
 title: Deployment
 status: active
-updated: 2026-11-13
+updated: 2026-11-17
 related: [testing.md, observability.md, architecture.md]
 ---
 
@@ -36,7 +36,7 @@ Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env
 
 The Event Sourcing rollout rewrites the migration history as four consolidated migrations and assumes a clean database; it does not backfill rows from the former V1–V7 schema. The local-only `scripts/db-reset.sh` replays the new history. Production migration and cutover are outside the rollout scope, so do not apply the rewritten history to an existing production database.
 
-Plugin URLs are not bound. `DATABASE_URL`, `REDIS_URL`, and `CLOUDAMQP_URL` do nothing until you copy the host, port, user, and password into the variables above. `DB_URL` must be a JDBC URL.
+`ServiceUrlEnvironmentPostProcessor` automatically maps `DATABASE_URL` (`postgres://` or `postgresql://`), `REDIS_URL` (`redis://` or `rediss://`), and `RABBITMQ_URL` / `CLOUDAMQP_URL` (`amqp://` or `amqps://`) when `DB_URL`, `REDIS_HOST`, or `RABBITMQ_HOST` are not explicitly set. Explicit variables still take precedence. For prebuilt Docker Hub / GHCR images without a local JDK, set `PAYMENTS_IMAGE=<owner>/payments-platform:<tag>` and run `make up-prebuilt`; publish multi-arch (`linux/amd64,linux/arm64`) tags with `scripts/docker-publish.sh --image <owner>/payments-platform --tag <semver> --push`.
 
 ## Local
 

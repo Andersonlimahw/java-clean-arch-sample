@@ -22,6 +22,8 @@ import com.muse.payments.payments.application.ListPaymentsQueryHandler;
 import com.muse.payments.payments.application.PageResponse;
 import com.muse.payments.payments.application.PaymentHistoryItemResponse;
 import com.muse.payments.payments.application.PaymentResponse;
+import com.muse.payments.payments.application.PaymentWriteRateLimitPort;
+import com.muse.payments.shared.domain.RateLimitExceededException;
 import com.muse.payments.shared.domain.ValidationException;
 import com.muse.payments.shared.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -73,6 +75,7 @@ public class PaymentController {
     private final GetPaymentHistoryQueryHandler getPaymentHistoryHandler;
     private final ListPaymentsQueryHandler listPaymentsHandler;
     private final ListHeldPaymentsQueryHandler listHeldPaymentsHandler;
+    private final PaymentWriteRateLimitPort writeRateLimiter;
 
     public PaymentController(
             CreatePaymentUseCase createPaymentUseCase,
@@ -82,7 +85,8 @@ public class PaymentController {
             GetPaymentByIdQueryHandler getPaymentByIdHandler,
             GetPaymentHistoryQueryHandler getPaymentHistoryHandler,
             ListPaymentsQueryHandler listPaymentsHandler,
-            ListHeldPaymentsQueryHandler listHeldPaymentsHandler
+            ListHeldPaymentsQueryHandler listHeldPaymentsHandler,
+            PaymentWriteRateLimitPort writeRateLimiter
     ) {
         this.createPaymentUseCase = Objects.requireNonNull(createPaymentUseCase);
         this.reviewPaymentHandler = Objects.requireNonNull(reviewPaymentHandler);
@@ -92,6 +96,7 @@ public class PaymentController {
         this.getPaymentHistoryHandler = Objects.requireNonNull(getPaymentHistoryHandler);
         this.listPaymentsHandler = Objects.requireNonNull(listPaymentsHandler);
         this.listHeldPaymentsHandler = Objects.requireNonNull(listHeldPaymentsHandler);
+        this.writeRateLimiter = Objects.requireNonNull(writeRateLimiter);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -108,6 +113,7 @@ public class PaymentController {
         if (idempotencyKey.trim().length() > 120) {
             throw new ValidationException("Idempotency-Key header must not exceed 120 characters");
         }
+        enforceWriteRateLimit(currentUser.userId());
         CreatePaymentResult result = createPaymentUseCase.execute(
                 currentUser.userId(), idempotencyKey.trim(), canonicalize(request));
         return respond(result, httpRequest);
@@ -257,6 +263,7 @@ public class PaymentController {
             @RequestParam ReviewDecision decision,
             @Parameter(hidden = true) CurrentUser currentUser
     ) {
+        enforceWriteRateLimit(currentUser.userId());
         PaymentResponse response = reviewPaymentHandler.handle(new ReviewPaymentCommand(id, currentUser.userId(), decision));
         return ResponseEntity.ok(response);
     }
@@ -267,6 +274,7 @@ public class PaymentController {
             @PathVariable UUID id,
             @Parameter(hidden = true) CurrentUser currentUser
     ) {
+        enforceWriteRateLimit(currentUser.userId());
         PaymentResponse response = confirmPaymentHandler.handle(new ConfirmPaymentCommand(id, currentUser.userId()));
         return ResponseEntity.ok(response);
     }
@@ -278,7 +286,14 @@ public class PaymentController {
             @RequestParam(defaultValue = "Customer requested cancellation") String reason,
             @Parameter(hidden = true) CurrentUser currentUser
     ) {
+        enforceWriteRateLimit(currentUser.userId());
         PaymentResponse response = cancelPaymentHandler.handle(new CancelPaymentCommand(id, currentUser.userId(), reason));
         return ResponseEntity.ok(response);
+    }
+
+    private void enforceWriteRateLimit(UUID userId) {
+        if (!writeRateLimiter.tryAcquire(userId)) {
+            throw new RateLimitExceededException("Too many payment write requests. Please retry later.", 60);
+        }
     }
 }

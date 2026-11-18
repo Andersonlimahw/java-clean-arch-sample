@@ -44,12 +44,16 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_SSL_ENABLED:false}
     publisher-confirm-type: correlated
     publisher-returns: true
 
@@ -101,6 +105,16 @@ app:
     # Platform threads that run BCrypt, so hashing does not occupy virtual-thread carriers.
     # 0 means availableProcessors() - 1 (minimum 1).
     password-hashing-threads: ${PASSWORD_HASHING_THREADS:0}
+    expose-public-docs-and-metrics: ${EXPOSE_PUBLIC_DOCS_AND_METRICS:true}
+    auth-ip-max-requests-per-minute: ${AUTH_IP_RATE_LIMIT_PER_MINUTE:20}
+    auth-account-max-requests-per-minute: ${AUTH_ACCOUNT_RATE_LIMIT_PER_MINUTE:15}
+  payments:
+    write-max-requests-per-minute: ${PAYMENT_WRITE_RATE_LIMIT_PER_MINUTE:120}
+  retention:
+    cleanup-interval-ms: ${RETENTION_CLEANUP_INTERVAL_MS:3600000}
+    published-outbox-ttl: ${PUBLISHED_OUTBOX_RETENTION:P7D}
+    processed-events-ttl: ${PROCESSED_EVENTS_RETENTION:P30D}
+    expired-refresh-tokens-ttl: ${EXPIRED_REFRESH_TOKENS_RETENTION:P7D}
   idempotency:
     cleanup-interval-ms: 3600000
     # In-flight lease only. Completion extends the row to 24h. Long enough for screening plus persist.
@@ -110,8 +124,11 @@ app:
     audience: ${JWT_AUDIENCE:payments-api}
     access-token-ttl: ${ACCESS_TOKEN_TTL:PT15M}
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:P7D}
+    key-id: ${JWT_KEY_ID:payments-jwt-key-v1}
     private-key-pem: ${JWT_PRIVATE_KEY:}
     public-key-pem: ${JWT_PUBLIC_KEY:}
+    previous-key-id: ${JWT_PREVIOUS_KEY_ID:payments-jwt-key-v0}
+    previous-public-key-pem: ${JWT_PREVIOUS_PUBLIC_KEY:}
   messaging:
     listener-max-attempts: ${LISTENER_MAX_ATTEMPTS:5}
     listener-initial-interval-ms: ${LISTENER_INITIAL_INTERVAL_MS:500}

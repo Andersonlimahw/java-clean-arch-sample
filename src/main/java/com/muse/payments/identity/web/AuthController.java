@@ -1,5 +1,6 @@
 package com.muse.payments.identity.web;
 
+import com.muse.payments.identity.application.AuthRateLimitPort;
 import com.muse.payments.identity.application.AuthTokensResponse;
 import com.muse.payments.identity.application.LoginCommand;
 import com.muse.payments.identity.application.LoginCommandHandler;
@@ -13,7 +14,6 @@ import com.muse.payments.identity.application.RegisterCommand;
 import com.muse.payments.identity.application.RegisterCommandHandler;
 import com.muse.payments.identity.application.RegisterRequest;
 import com.muse.payments.identity.application.UserResponse;
-import com.muse.payments.identity.application.AuthRateLimitPort;
 import com.muse.payments.shared.domain.RateLimitExceededException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -58,7 +58,7 @@ public class AuthController {
     @PostMapping("/register")
     @Operation(summary = "Register a new user account")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
-        checkRateLimit(httpRequest);
+        checkIpRateLimit(httpRequest);
 
         RegisterCommand command = new RegisterCommand(request.email(), request.password(), request.displayName());
         UserResponse response = registerHandler.handle(command);
@@ -69,7 +69,10 @@ public class AuthController {
     @PostMapping("/login")
     @Operation(summary = "Authenticate user and issue access and refresh tokens")
     public ResponseEntity<AuthTokensResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        checkRateLimit(httpRequest);
+        checkIpRateLimit(httpRequest);
+        if (!rateLimiter.tryAcquireAccount(request.email())) {
+            throw new RateLimitExceededException("Too many authentication attempts. Please retry later.", 60);
+        }
 
         LoginCommand command = new LoginCommand(request.email(), request.password());
         AuthTokensResponse response = loginHandler.handle(command);
@@ -79,7 +82,7 @@ public class AuthController {
     @PostMapping("/refresh")
     @Operation(summary = "Rotate refresh token and issue new access token")
     public ResponseEntity<AuthTokensResponse> refresh(@Valid @RequestBody RefreshTokenRequest request, HttpServletRequest httpRequest) {
-        checkRateLimit(httpRequest);
+        checkIpRateLimit(httpRequest);
 
         RefreshTokenCommand command = new RefreshTokenCommand(request.refreshToken());
         AuthTokensResponse response = refreshTokenHandler.handle(command);
@@ -94,7 +97,7 @@ public class AuthController {
         logoutHandler.handle(new LogoutCommand(token));
     }
 
-    private void checkRateLimit(HttpServletRequest request) {
+    private void checkIpRateLimit(HttpServletRequest request) {
         String clientIp = request.getRemoteAddr();
         if (clientIp == null || clientIp.isBlank()) {
             clientIp = "anonymous";

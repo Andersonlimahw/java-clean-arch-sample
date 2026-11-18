@@ -67,6 +67,8 @@ services:
       - ./deploy/wiremock/mappings:/home/wiremock/mappings:ro
 
   app:
+    image: ${PAYMENTS_IMAGE:-payments-platform:local}
+    pull_policy: ${PAYMENTS_PULL_POLICY:-missing}
     build:
       context: .
       dockerfile: Dockerfile

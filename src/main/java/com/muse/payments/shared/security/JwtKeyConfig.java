@@ -1,10 +1,14 @@
 package com.muse.payments.shared.security;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +36,7 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
@@ -39,17 +44,17 @@ import java.util.List;
 public class JwtKeyConfig {
 
     private static final Logger log = LoggerFactory.getLogger(JwtKeyConfig.class);
-    private static final String DETERMINISTIC_KEY_ID = "payments-jwt-key-v1";
 
     @Bean
     public RSAKey rsaKey(JwtProperties properties, Environment env) {
+        String activeKeyId = properties.keyId();
         if (StringUtils.hasText(properties.privateKeyPem()) && StringUtils.hasText(properties.publicKeyPem())) {
             try {
                 RSAPublicKey publicKey = parsePublicKey(properties.publicKeyPem());
                 RSAPrivateKey privateKey = parsePrivateKey(properties.privateKeyPem());
                 return new RSAKey.Builder(publicKey)
                         .privateKey(privateKey)
-                        .keyID(DETERMINISTIC_KEY_ID)
+                        .keyID(activeKeyId)
                         .build();
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to parse configured RSA JWT keys", e);
@@ -67,7 +72,7 @@ public class JwtKeyConfig {
             KeyPair keyPair = generator.generateKeyPair();
             return new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
                     .privateKey((RSAPrivateKey) keyPair.getPrivate())
-                    .keyID(DETERMINISTIC_KEY_ID)
+                    .keyID(activeKeyId)
                     .build();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate ephemeral RSA key pair", e);
@@ -100,7 +105,22 @@ public class JwtKeyConfig {
     @Bean
     public JwtDecoder jwtDecoder(RSAKey rsaKey, JwtProperties properties) {
         try {
-            NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(rsaKey.toRSAPublicKey()).build();
+            List<JWK> verificationKeys = new ArrayList<>(2);
+            verificationKeys.add(rsaKey.toPublicJWK());
+            if (StringUtils.hasText(properties.previousPublicKeyPem())) {
+                if (properties.keyId().equals(properties.previousKeyId())) {
+                    throw new IllegalStateException("JWT_PREVIOUS_KEY_ID must differ from JWT_KEY_ID when JWT_PREVIOUS_PUBLIC_KEY is configured");
+                }
+                RSAPublicKey previousPublicKey = parsePublicKey(properties.previousPublicKeyPem());
+                verificationKeys.add(new RSAKey.Builder(previousPublicKey)
+                        .keyID(properties.previousKeyId())
+                        .build());
+            }
+
+            DefaultJWTProcessor<SecurityContext> jwtProcessor = new DefaultJWTProcessor<>();
+            JWKSource<SecurityContext> verificationSource = new ImmutableJWKSet<>(new JWKSet(verificationKeys));
+            jwtProcessor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, verificationSource));
+            NimbusJwtDecoder decoder = new NimbusJwtDecoder(jwtProcessor);
 
             OAuth2TokenValidator<Jwt> timestampValidator = new JwtTimestampValidator();
             OAuth2TokenValidator<Jwt> issuerValidator = new JwtClaimValidator<String>(
@@ -121,12 +141,14 @@ public class JwtKeyConfig {
 
             decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestampValidator, issuerValidator, audienceValidator, tokenTypeValidator));
             return decoder;
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to configure JwtDecoder", e);
         }
     }
 
-    private RSAPublicKey parsePublicKey(String pem) throws Exception {
+    static RSAPublicKey parsePublicKey(String pem) throws Exception {
         String clean = pem.replace("-----BEGIN PUBLIC KEY-----", "")
                 .replace("-----END PUBLIC KEY-----", "")
                 .replace("\\n", "")
@@ -137,7 +159,7 @@ public class JwtKeyConfig {
         return (RSAPublicKey) keyFactory.generatePublic(new X509EncodedKeySpec(decoded));
     }
 
-    private RSAPrivateKey parsePrivateKey(String pem) throws Exception {
+    static RSAPrivateKey parsePrivateKey(String pem) throws Exception {
         String clean = pem.replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
                 .replace("\\n", "")
