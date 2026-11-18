@@ -29,7 +29,7 @@ For protected endpoints, use Swagger UI's **Authorize** control or send `Authori
 | `POST` | `/api/v1/payments/{id}/cancel?reason={text}` | `USER` or `ADMIN`, payment owner | Cancels a `PENDING` or `UNDER_REVIEW` payment; `reason` is optional and has a server default; returns `200`. |
 | `GET` | `/api/v1/notifications` | Any authenticated user | Lists only the caller's notifications; returns `200`. |
 
-The API documentation endpoints `/v3/api-docs/**`, `/swagger-ui/**`, and `/swagger-ui.html` are public. Actuator health, info, and Prometheus endpoints are public; `/actuator/metrics` is exposed by Actuator but requires authentication under the fallback security rule. See `SecurityConfig` for the complete matcher order.
+In `local` and `test` profiles (`app.security.expose-public-docs-and-metrics=true`), `/v3/api-docs/**`, `/swagger-ui/**`, `/actuator/prometheus`, and `/actuator/metrics/**` are public. On the `prod` profile, Springdoc is disabled by default and those endpoints require `ROLE_ADMIN`, while `/actuator/health/**` and `/actuator/info` remain public for platform probes. Authentication endpoints enforce atomic Redis per-IP (`20/min`) and per-account (`15/min` on login, hashed with SHA-256) rate limits, and `POST /api/v1/payments/**` mutations enforce a per-user write rate limit (`120/min`) returning `429` with `Retry-After: 60`.
 
 ### Idempotency
 

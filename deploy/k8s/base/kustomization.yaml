@@ -11,3 +11,8 @@ resources:
   - ingress.yaml
   - networkpolicy.yaml
   - flyway-job.yaml
+
+images:
+  - name: payments-platform
+    newName: ghcr.io/andersonlimahw/payments-platform
+    newTag: 0.1.0

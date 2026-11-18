@@ -28,8 +28,10 @@ public abstract class TestcontainersBase extends SharedContainers {
         // Containers are shared across contexts; auth budgets belong to each test.
         // Clear only test auth buckets, preserving cache and idempotency fixtures.
         redisTemplate.ifAvailable(redis -> {
-            var keys = redis.keys("ratelimit:auth:*");
-            if (keys != null && !keys.isEmpty()) redis.delete(keys);
+            var authKeys = redis.keys("ratelimit:auth:*");
+            if (authKeys != null && !authKeys.isEmpty()) redis.delete(authKeys);
+            var paymentKeys = redis.keys("ratelimit:payments:*");
+            if (paymentKeys != null && !paymentKeys.isEmpty()) redis.delete(paymentKeys);
         });
     }
 

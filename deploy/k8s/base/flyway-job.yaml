@@ -10,10 +10,18 @@ spec:
       labels:
         app.kubernetes.io/component: migration
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: flyway-migration
-          image: payments-platform:latest
+          image: payments-platform:0.1.0
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
@@ -35,3 +43,15 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}

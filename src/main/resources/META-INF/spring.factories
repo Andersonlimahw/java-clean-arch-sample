@@ -1,1 +1,1 @@
-org.springframework.boot.env.EnvironmentPostProcessor=com.muse.payments.shared.infrastructure.observability.OtlpEndpointNormalizer
+org.springframework.boot.env.EnvironmentPostProcessor=com.muse.payments.shared.infrastructure.observability.OtlpEndpointNormalizer,com.muse.payments.shared.infrastructure.config.ServiceUrlEnvironmentPostProcessor

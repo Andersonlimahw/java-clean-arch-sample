@@ -16,7 +16,7 @@ spec:
     - host: api.payments.example.com
       http:
         paths:
-          - path: /
+          - path: /api
             pathType: Prefix
             backend:
               service:

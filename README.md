@@ -185,4 +185,5 @@ APP_MIGRATION_ONLY=true mvn spring-boot:run
 Runbooks for Railway (preferred), Render, and Cloud Run, plus rollback and troubleshooting: [docs/deploy.md](docs/deploy.md).
 Kubernetes layout and apply order: [deploy/k8s/README.md](deploy/k8s/README.md) and `scripts/k8s-apply.sh`.
 HTTP smoke test: `scripts/validate-api.sh`.
+Multi-arch image publish (`linux/amd64,linux/arm64`): `bash scripts/docker-publish.sh --image <owner>/payments-platform --tag 0.1.0 --push` (or `PAYMENTS_IMAGE=<owner>/payments-platform:0.1.0 make up-prebuilt` to run Compose from a registry image without a local JDK).
 Do not run this JVM on Vercel Functions. That decision is [ADR 0011](docs/adr/0011-railway-vs-other-hosting.md). No production project is created from this repository.

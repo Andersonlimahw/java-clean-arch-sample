@@ -39,10 +39,10 @@ if ! docker info &> /dev/null; then
 fi
 kustomize build deploy/k8s/overlays/staging > "$WORK_DIR/k8s-staging.yaml"
 kustomize build deploy/k8s/overlays/production > "$WORK_DIR/k8s-production.yaml"
-docker run --rm -v "$WORK_DIR:/work:ro" ghcr.io/yannh/kubeconform:latest \
-    -strict -kubernetes-version 1.30.0 -summary /work/k8s-staging.yaml
-docker run --rm -v "$WORK_DIR:/work:ro" ghcr.io/yannh/kubeconform:latest \
-    -strict -kubernetes-version 1.30.0 -summary /work/k8s-production.yaml
+docker run --rm -i ghcr.io/yannh/kubeconform:latest \
+    -strict -kubernetes-version 1.30.0 -summary < "$WORK_DIR/k8s-staging.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:latest \
+    -strict -kubernetes-version 1.30.0 -summary < "$WORK_DIR/k8s-production.yaml"
 echo "    ✓ Kubernetes manifests valid (strict 1.30.0)"
 
 echo "==> 4. Maven clean verify..."

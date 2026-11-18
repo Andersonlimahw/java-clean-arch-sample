@@ -187,7 +187,7 @@ else
   fi
 fi
 
-echo "Image payments-platform:latest is pull policy IfNotPresent."
+echo "Ensure the pinned container image in kustomization.yaml is pushed or loaded before starting the Job."
 echo "Build and load or push that tag before the Job can start."
 
 echo "Applying migration Job"
