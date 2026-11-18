@@ -94,33 +94,40 @@ Seed the payment-list dataset and run the k6 scenarios:
 
 The [testing guide](docs/testing.md) explains the suite split, Colima variables, Newman behavior, and how to read k6 p95. The [performance guide](perf/README.md) has dataset and scenario details.
 
-### Running locally
-Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`). The repository uses the Compose V2 plugin (`docker compose`); the V1 binary is `docker-compose` (hyphen). Both read `docker-compose.yml`.
+### Running & Debugging locally
+Local integration tests run automatically against ephemeral containers via Testcontainers (`mvn clean verify`). On macOS + Homebrew/Colima without the CLI plugin symlink (`ln -sfn /opt/homebrew/opt/docker-compose/bin/docker-compose ~/.docker/cli-plugins/docker-compose`), run `docker-compose` (with a hyphen) instead of `docker compose`. Both read `docker-compose.yml`.
 
-To run the full local stack, copy the example environment file and start Compose from the repository root:
+1. **Create `.env` (first run only) and start the backing infrastructure containers:**
 
 ```bash
-cp .env.example .env
-docker compose up -d --build
-curl -fsS http://127.0.0.1:8080/actuator/health/readiness
+cp -n .env.example .env
+docker-compose up -d postgres redis rabbitmq fraud-screening
+# (or `docker compose up -d postgres redis rabbitmq fraud-screening` when the CLI plugin is linked)
 ```
 
-To run with **remote debugging** enabled (JDWP agent on port `5005`, attachable from IntelliJ/VS Code/Eclipse):
+2. **Debug via IntelliJ IDEA UI (recommended for local development):**
+   - Open `src/main/java/com/muse/payments/PaymentsApplication.java`.
+   - Go to **Run -> Edit Configurations...** (or click the gutter icon next to `public static void main` -> **Modify Run Configuration...**).
+   - Confirm **JDK 25** is selected and main class is `com.muse.payments.PaymentsApplication`.
+   - In **Environment variables**, click the folder/browse icon and select `.env` from the repository root (or add `SPRING_PROFILES_ACTIVE=local`; `.env` already sets `SPRING_PROFILES_ACTIVE=local` and the local localhost endpoints).
+   - Place your breakpoints and click **Debug** (`⌃D` on macOS / `Shift+F9`).
+
+3. **Or run the application JVM from the terminal:**
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
-# or using Makefile:
-make debug
-```
-
-To run the application JVM on the host instead, start only its dependencies and source the local environment file:
-
-```bash
-docker compose up -d postgres redis rabbitmq fraud-screening
+docker-compose up -d postgres redis rabbitmq fraud-screening
 set -a
 source .env
 set +a
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+```
+
+4. **Or run the full stack inside containers (including the app image):**
+
+```bash
+cp -n .env.example .env
+docker-compose up -d --build
+curl -fsS http://127.0.0.1:8080/actuator/health/readiness
 ```
 
 `mvn spring-boot:run` stays in the foreground. From a second shell, after the process is booting:
@@ -144,7 +151,7 @@ When running locally via Docker Compose, services are accessible on the host via
 | **Redis 7** | TCP `6379` | Password: `redis_secret` | [docs/concurrency.md](docs/concurrency.md) |
 | **RabbitMQ 3.13** | AMQP `5672`, HTTP `15672` (Management UI) | User: `guest`, Password: `guest`, VHost: `/` | [docs/messaging.md](docs/messaging.md), [Management UI](http://localhost:15672) |
 | **WireMock** | HTTP `8090` | Public mock provider | [docs/resilience.md](docs/resilience.md), [Mappings Admin](http://localhost:8090/__admin/mappings) |
-| **JDWP Debugger** | TCP `5005` | Socket attach (started via `make debug`) | [docker-compose.debug.yml](docker-compose.debug.yml) |
+| **IntelliJ Debugger / JDWP** | UI local JVM (recommended) or TCP `5005` (`make debug`) | Direct IDE Debug on `PaymentsApplication` or optional container attach | [docker-compose.debug.yml](docker-compose.debug.yml) |
 
 #### Observability & Tracing (`docker-compose.observability.yml`)
 
