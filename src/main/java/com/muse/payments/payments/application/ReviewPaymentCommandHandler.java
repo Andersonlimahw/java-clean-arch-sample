@@ -18,15 +18,18 @@ public class ReviewPaymentCommandHandler implements CommandHandler<ReviewPayment
     private final PaymentRepository paymentRepository;
     private final OutboxPort outboxPort;
     private final PaymentCachePort paymentCachePort;
+    private final ProviderPaymentInitiator initiateProviderPayment;
 
     public ReviewPaymentCommandHandler(
             PaymentRepository paymentRepository,
             OutboxPort outboxPort,
-            PaymentCachePort paymentCachePort
+            PaymentCachePort paymentCachePort,
+            ProviderPaymentInitiator initiateProviderPayment
     ) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
         this.outboxPort = Objects.requireNonNull(outboxPort);
         this.paymentCachePort = Objects.requireNonNull(paymentCachePort);
+        this.initiateProviderPayment = Objects.requireNonNull(initiateProviderPayment);
     }
 
     @Override
@@ -49,6 +52,10 @@ public class ReviewPaymentCommandHandler implements CommandHandler<ReviewPayment
             }
         }
         paymentCachePort.evictAfterCommit(saved.getId());
+        if (command.decision() == ReviewDecision.APPROVE) {
+            // The payment becomes PENDING here; the provider call runs after this commit.
+            initiateProviderPayment.initiateAfterCommit(saved.getId());
+        }
         return PaymentResponse.from(saved);
     }
 }

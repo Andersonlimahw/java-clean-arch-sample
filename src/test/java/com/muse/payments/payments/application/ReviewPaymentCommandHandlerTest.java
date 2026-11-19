@@ -10,6 +10,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,11 +28,13 @@ class ReviewPaymentCommandHandlerTest {
         Payment payment = Payment.createUnderReview(
                 UUID.randomUUID(), owner, com.muse.payments.payments.domain.Money.of(new BigDecimal("10.00"), "BRL"), "Held", "down");
         payment.pullDomainEvents();
-        ReviewPaymentCommandHandler handler = handler(payment);
+        List<UUID> initiated = new ArrayList<>();
+        ReviewPaymentCommandHandler handler = handler(payment, initiated);
 
         PaymentResponse response = handler.handle(new ReviewPaymentCommand(payment.getId(), reviewer, ReviewDecision.APPROVE));
 
         assertThat(response.status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(initiated).containsExactly(payment.getId());
         assertThat(payment.getReviewerId()).isEqualTo(reviewer);
         assertThat(payment.getReviewedAt()).isNotNull();
         assertThat(payment.getScreeningReason()).isNull();
@@ -50,6 +54,10 @@ class ReviewPaymentCommandHandlerTest {
     }
 
     private static ReviewPaymentCommandHandler handler(Payment payment) {
+        return handler(payment, new ArrayList<>());
+    }
+
+    private static ReviewPaymentCommandHandler handler(Payment payment, List<UUID> initiated) {
         PaymentRepository repository = new PaymentRepository() {
             @Override
             public Payment save(Payment toSave) {
@@ -88,6 +96,6 @@ class ReviewPaymentCommandHandlerTest {
             public PaymentResponse getOrLoad(UUID paymentId, java.util.function.Supplier<PaymentResponse> dbLoader) {
                 return dbLoader.get();
             }
-        });
+        }, initiated::add);
     }
 }

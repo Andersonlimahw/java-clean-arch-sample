@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -49,6 +51,21 @@ public class InitiateProviderPaymentUseCase implements ProviderPaymentInitiator 
         this.defaultProvider = Objects.requireNonNull(defaultProvider);
     }
 
+    @Override
+    public void initiateAfterCommit(UUID paymentId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    initiate(paymentId);
+                }
+            });
+        } else {
+            initiate(paymentId);
+        }
+    }
+
+    @Override
     public void initiate(UUID paymentId) {
         if (!providerRegistry.isRegistered(defaultProvider)) {
             return;
