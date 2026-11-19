@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.muse.payments.TestcontainersBase;
+import com.muse.payments.payments.application.FraudScreeningResult;
 import com.muse.payments.shared.security.JwtTokenIssuer;
+import com.muse.payments.support.ControllableFraudScreening;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +74,9 @@ class PspWebhookIT extends TestcontainersBase {
 
     @Autowired
     private JwtTokenIssuer jwtTokenIssuer;
+
+    @Autowired
+    private ControllableFraudScreening fraudScreening;
 
     private String providerReference;
 
@@ -177,6 +182,72 @@ class PspWebhookIT extends TestcontainersBase {
         assertThat(paymentStatus(paymentId)).isEqualTo("PENDING");
     }
 
+    @Test
+    @DisplayName("An approved review sends the payment to the provider and its callback completes it")
+    void approvedReviewOpensIntent() throws Exception {
+        fraudScreening.setResult(FraudScreeningResult.underReview("provider down"));
+        providerReference = "pi_" + UUID.randomUUID().toString().replace("-", "");
+        PSP.stubFor(WireMock.post(urlEqualTo("/v1/payment_intents"))
+                .willReturn(okJson("{\"id\":\"" + providerReference + "\",\"status\":\"requires_payment_method\"}")));
+        String owner = jwtTokenIssuer.issueAccessToken(UUID.randomUUID(), List.of("USER"));
+        String admin = jwtTokenIssuer.issueAccessToken(UUID.randomUUID(), List.of("ADMIN"));
+        String request = """
+                {"amount":42.00,"currency":"BRL","description":"Held payment"}
+                """;
+        MvcResult created = mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + owner)
+                        .header("Idempotency-Key", "held-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String paymentId = json(created).get("id").asText();
+        assertThat(json(created).get("status").asText()).isEqualTo("UNDER_REVIEW");
+        PSP.verify(0, WireMock.postRequestedFor(urlEqualTo("/v1/payment_intents")));
+        assertThat(providerReference(paymentId)).isNull();
+
+        mockMvc.perform(post("/api/v1/payments/" + paymentId + "/review")
+                        .header("Authorization", "Bearer " + admin)
+                        .param("decision", "APPROVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        assertThat(providerReference(paymentId)).isEqualTo(providerReference);
+
+        MvcResult result = webhook(PROVIDER,
+                event("evt_review_1", "payment_intent.succeeded", providerReference, paymentId), now());
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertThat(json(result).get("outcome").asText()).isEqualTo("COMPLETED");
+        assertThat(paymentStatus(paymentId)).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("A signed event without payment metadata is acknowledged and ignored")
+    void signedEventWithoutPaymentMetadataIsIgnored() throws Exception {
+        String body = """
+                {"id":"evt_no_metadata","object":"event","type":"payment_intent.succeeded","created":%d,
+                 "data":{"object":{"id":"pi_orphan","object":"payment_intent"}}}
+                """.formatted(now());
+
+        MvcResult result = webhook(PROVIDER, body, now());
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertThat(json(result).get("outcome").asText()).isEqualTo("IGNORED");
+    }
+
+    @Test
+    @DisplayName("A payload over the size bound is rejected before signature verification")
+    void oversizedPayloadIsRejected() throws Exception {
+        String body = "a".repeat(512 * 1024 + 1);
+
+        mockMvc.perform(post("/api/v1/webhooks/payments/" + PROVIDER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("urn:problem-type:provider-payload"));
+    }
+
     private String createPayment() throws Exception {
         providerReference = "pi_" + UUID.randomUUID().toString().replace("-", "");
         PSP.stubFor(WireMock.post(urlEqualTo("/v1/payment_intents"))
@@ -209,6 +280,11 @@ class PspWebhookIT extends TestcontainersBase {
                 {"id":"%s","object":"event","type":"%s","created":%d,
                  "data":{"object":{"id":"%s","object":"payment_intent","metadata":{"payment_id":"%s"}}}}
                 """.formatted(eventId, type, Instant.now().getEpochSecond(), reference, paymentId);
+    }
+
+    private String providerReference(String paymentId) {
+        return jdbcTemplate.queryForObject(
+                "select provider_reference from payments where id = ?::uuid", String.class, paymentId);
     }
 
     private Map<String, Object> providerRow(String paymentId) {

@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
@@ -68,7 +67,7 @@ public class PaymentWebhookController {
             @RequestBody(required = false) byte[] body,
             @RequestHeader HttpHeaders headers
     ) {
-        String rawBody = body == null ? "" : new String(body, StandardCharsets.UTF_8);
+        byte[] rawBody = body == null ? new byte[0] : body;
         return ResponseEntity.ok(processWebhook.process(provider, rawBody, headers.toSingleValueMap()));
     }
 }
