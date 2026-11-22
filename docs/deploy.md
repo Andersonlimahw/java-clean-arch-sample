@@ -1,7 +1,7 @@
 ---
 title: Deployment
 status: active
-updated: 2026-11-17
+updated: 2026-11-21
 related: [testing.md, observability.md, architecture.md]
 ---
 
@@ -34,7 +34,7 @@ Copy `.env.example` for local runs. Never commit filled-in secrets. `secrets.env
 
 `prod` without JWT PEMs refuses to start. That is intentional.
 
-The Event Sourcing rollout rewrites the migration history as four consolidated migrations and assumes a clean database; it does not backfill rows from the former V1–V7 schema. The local-only `scripts/db-reset.sh` replays the new history. Production migration and cutover are outside the rollout scope, so do not apply the rewritten history to an existing production database.
+The Event Sourcing rollout rewrote the migration history as four consolidated migrations (V1–V4) and assumes a clean database; it does not backfill rows from the former V1–V7 schema. Append-only migrations resumed at V5 and the current head is V9. The local-only `scripts/db-reset.sh` replays the whole history. Production migration and cutover are outside the rollout scope, so do not apply the rewritten history to an existing production database.
 
 `ServiceUrlEnvironmentPostProcessor` automatically maps `DATABASE_URL` (`postgres://` or `postgresql://`), `REDIS_URL` (`redis://` or `rediss://`), and `RABBITMQ_URL` / `CLOUDAMQP_URL` (`amqp://` or `amqps://`) when `DB_URL`, `REDIS_HOST`, or `RABBITMQ_HOST` are not explicitly set. Explicit variables still take precedence. For prebuilt Docker Hub / GHCR images without a local JDK, set `PAYMENTS_IMAGE=<owner>/payments-platform:<tag>` and run `make up-prebuilt`; publish multi-arch (`linux/amd64,linux/arm64`) tags with `scripts/docker-publish.sh --image <owner>/payments-platform --tag <semver> --push`.
 

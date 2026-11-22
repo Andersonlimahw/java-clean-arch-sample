@@ -26,7 +26,7 @@ This is the machine-readable documentation index. Read the linked pages for curr
 
 ## Architecture decisions
 
-- [ADR index](adr/README.md): Accepted and superseded decisions.
+- [ADR index](adr/README.md): Accepted and superseded decisions, plus the retired 0001 (trip planner) and 0004 (CQRS without event sourcing) records.
 - [ADR 0014](adr/0014-web-boundary-and-strict-local-gate.md): Application boundary for notifications and strict local validation.
 - [ADR 0015](adr/0015-virtual-thread-hot-paths.md): Password hashing off the virtual-thread carriers and outside transactions, batched outbox relay, compact object headers, and the Java 25 features not adopted.
 - [ADR 0016](adr/0016-event-sourcing-with-hybrid-projections.md): PostgreSQL event store, hybrid projections, outbox preservation, and clean-database migration policy.

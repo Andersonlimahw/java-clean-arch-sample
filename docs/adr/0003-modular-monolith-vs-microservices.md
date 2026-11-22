@@ -2,13 +2,13 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-12
-- **Supersedes:** the structural decision in ADR 0001 for the payments codebase (ADR 0002 already retired the trip domain)
+- **Supersedes:** the structural decision in the retired ADR 0001 for the payments codebase (ADR 0002 already retired the trip domain)
 
 ## Context
 
 The platform is one product with three business modules that share a transaction boundary: a payment and its outbox row must commit together. The team is one deployable, one database, and one on-call surface. Splitting identity, payments, and notifications into services would add network failures, distributed transactions, and independent schema deploys before there is a scaling hotspot that requires them.
 
-[ADR 0002](0002-payments-pivot.md) retired the trip-planner domain. This ADR supersedes the structural decision in [ADR 0001](0001-modular-monolith-vertical-slices.md): one deployable and one owner per module remain, and cross-module writes go through the outbox instead of another module's service API.
+[ADR 0002](0002-payments-pivot.md) retired the trip-planner domain. This ADR supersedes the structural decision in the retired ADR 0001 (see the [ADR index](README.md#retired-records)): one deployable and one owner per module remain, and cross-module writes go through the outbox instead of another module's service API.
 
 ## Decision
 
@@ -33,4 +33,4 @@ Ship one Spring Boot application. Enforce module boundaries in-process with Spri
 |---|---|
 | Microservices per module | Distributed transactions or a dual-write for the outbox. Operational cost without a measured bottleneck. |
 | Several databases in one process | Loses the single commit that makes the outbox correct. |
-| Classic layered packages (`controller`, `service`, `repository` at the root) | That is the structure ADR 0001 rejected: no owner per aggregate, easy cross-reads. |
+| Classic layered packages (`controller`, `service`, `repository` at the root) | That is the structure the retired ADR 0001 rejected: no owner per aggregate, easy cross-reads. |

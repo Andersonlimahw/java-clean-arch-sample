@@ -9,7 +9,7 @@ The payments platform compiled and ran on Java 21. Java 25 is the current LTS. [
 
 The baseline in [spec 000](../../specs/000-master-plan.md) was Java 21. Moving that baseline to Java 25 was requested by Lemon and is approved via the micro1 expert review gate.
 
-[ADR 0001](0001-modular-monolith-vertical-slices.md) still says the superseded trip-planner was Java 21. That sentence is history for `java-journey-lemon-lab`, not the payments runtime.
+ADR 0001 — retired, see the [ADR index](README.md#retired-records) — still said the superseded trip-planner was Java 21. That sentence is history for `java-journey-lemon-lab`, not the payments runtime.
 
 ## Decision
 

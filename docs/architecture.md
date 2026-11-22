@@ -1,7 +1,7 @@
 ---
 title: Architecture
 status: active
-updated: 2026-11-15
+updated: 2026-11-21
 related: [api.md, data.md, messaging.md, adr/0014-web-boundary-and-strict-local-gate.md, adr/0016-event-sourcing-with-hybrid-projections.md]
 ---
 
@@ -10,7 +10,7 @@ related: [api.md, data.md, messaging.md, adr/0014-web-boundary-and-strict-local-
 One Spring Boot process (`com.muse.payments.PaymentsApplication`) on Java 25.
 Modules: `identity`, `payments`, `notifications`, and an open `shared` kernel. Open means a Spring Modulith module of type `OPEN`: the other modules may depend on it. It holds ports and cross-cutting types, not payment rules.
 The event store is the active source of truth for every domain aggregate. Command repositories replay streams; query adapters read projections.
-The trip-planner slices in ADR 0001 are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md).
+The trip-planner slices are retired. See [ADR 0002](adr/0002-payments-pivot.md) and [ADR 0003](adr/0003-modular-monolith-vs-microservices.md); the record that described them (ADR 0001) is retired in the [ADR index](adr/README.md#retired-records).
 
 ## Event-store kernel flow
 
@@ -133,16 +133,16 @@ The code uses `domain`, `application`, `web`, and `infrastructure` packages. The
 
 Dependencies point inward: web and infrastructure code may call application contracts and domain rules; domain code stays independent of framework and transport packages. `ArchitectureTest` checks domain purity, and `ModularityTest` checks Spring Modulith module boundaries. The `shared` module is deliberately open for cross-cutting ports and types; it does not own payment business rules.
 
-Commands replay facts, validate transitions and append new facts. Synchronous projectors and the integration outbox share that transaction. Queries read projections; notification listing goes through its application handler. Password hashes remain separate credential state. [ADR 0016](adr/0016-event-sourcing-with-hybrid-projections.md) supersedes ADR 0004.
+Commands replay facts, validate transitions and append new facts. Synchronous projectors and the integration outbox share that transaction. Queries read projections; notification listing goes through its application handler. Password hashes remain separate credential state. [ADR 0016](adr/0016-event-sourcing-with-hybrid-projections.md) supersedes the retired CQRS-without-event-sourcing decision (ADR 0004).
 
 ## Module map
 
 | Module | Package | Owns | Talks to others |
 |---|---|---|---|
-| identity | `com.muse.payments.identity` | `users`, `refresh_tokens` | Issues JWT used by the other HTTP APIs. No foreign keys into payments. |
-| payments | `com.muse.payments.payments` | `payments` | Appends integration events to `outbox_events`. Does not call the notifications repository. |
+| identity | `com.muse.payments.identity` | `users`, `refresh_tokens`, `user_credentials` | Issues JWT used by the other HTTP APIs. No foreign keys into payments. |
+| payments | `com.muse.payments.payments` | `payments`, `payment_history`, `payment_provider_events` | Appends integration events to `outbox_events`. Does not call the notifications repository. |
 | notifications | `com.muse.payments.notifications` | `notifications` | Learns about payments only from RabbitMQ. |
-| shared | `com.muse.payments.shared` | `outbox_events`, `processed_events`, `idempotency_keys` | Depended on by identity, payments, and notifications. Not a business module. |
+| shared | `com.muse.payments.shared` | `outbox_events`, `processed_events`, `idempotency_keys`, `event_store`, `snapshots`, `projection_checkpoints` | Depended on by identity, payments, and notifications. Not a business module. |
 
 `identity` and `payments` use `domain`, `application`, `infrastructure`, and `web`.
 `notifications` has `domain`, `application`, `infrastructure`, and `web`.
@@ -394,7 +394,7 @@ erDiagram
     }
 ```
 
-The clean-database Event Sourcing rollout consolidates the schema into V1–V4 and does not backfill the former V1–V7 tables. See [data.md](data.md) for the event-store kernel, indexes, and local reset procedure.
+The clean-database Event Sourcing rollout consolidated the schema into V1–V4 without backfilling the former V1–V7 tables; append-only migrations resumed at V5 and the current head is V9. See [data.md](data.md) for the event-store kernel, indexes, and local reset procedure.
 
 ## Eval
 

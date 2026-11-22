@@ -1,7 +1,7 @@
 ---
 title: Data Model
 status: active
-updated: 2026-11-18
+updated: 2026-11-21
 related: [architecture.md, concurrency.md, testing.md]
 ---
 
@@ -101,7 +101,7 @@ Safety: it refuses a `DB_URL` host other than `localhost`, `127.0.0.1`, `::1`, `
 
 ## Implementation references
 
-- Migration SQL: `src/main/resources/db/migration/V1__shared.sql` through `V7__independent_identity_projections.sql` (new V5–V7 after the one-time rewrite).
+- Migration SQL: `src/main/resources/db/migration/V1__shared.sql` through `V9__payment_provider_webhooks.sql` (V5–V9 appended after the one-time rewrite).
 - Event-store kernel and adapters: `src/main/java/com/muse/payments/shared/domain/EventSourcedAggregate.java`, `src/main/java/com/muse/payments/shared/application/EventStore.java`, and `src/main/java/com/muse/payments/shared/infrastructure/eventstore/`.
 - Runtime Flyway lock setting: `src/main/resources/application.yml`.
 - Payment list and held-payment queries: `src/main/java/com/muse/payments/payments/application/ListPaymentsQueryHandler.java`, `src/main/java/com/muse/payments/payments/application/ListHeldPaymentsQueryHandler.java`, and `src/main/java/com/muse/payments/payments/infrastructure/PaymentJpaRepository.java`.
@@ -114,4 +114,4 @@ rtk mvn -q -Dtest=MigrationOnlyModeTest,JavaVersionPinsTest test
 DB_URL=jdbc:postgresql://db.example.com:5432/payments DB_PASSWORD=x scripts/db-reset.sh --yes; echo $?
 ```
 
-Expected result: migration-only startup and version pins remain valid; Flyway applies V1–V7 on a clean PostgreSQL 16 database, and the reset script refuses the non-local host with exit code `1`. `AsyncProjectionIT` checks inverted XID/position ordering and restart; `ProjectionRebuildIT` checks all five projections and preservation of credentials/tokens.
+Expected result: migration-only startup and version pins remain valid; Flyway applies V1–V9 on a clean PostgreSQL 16 database, and the reset script refuses the non-local host with exit code `1`. `AsyncProjectionIT` checks inverted XID/position ordering and restart; `ProjectionRebuildIT` checks all five projections and preservation of credentials/tokens.

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-15
-- **Supersedes:** [ADR 0004](0004-cqrs-without-event-sourcing.md)
+- **Supersedes:** the retired ADR 0004 (CQRS without event sourcing); see the [ADR index](README.md#retired-records)
 
 ## Context
 
