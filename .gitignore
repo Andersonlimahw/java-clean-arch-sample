@@ -40,3 +40,6 @@ secrets.env
 
 ### Logs ###
 *.log
+
+### perf/k6 results (never commit)
+perf/results/

@@ -1,0 +1,9 @@
+# Local benchmark override. Applied only by perf/run-benchmark.sh:
+#   docker-compose -f docker-compose.yml -f perf/compose.benchmark.yml up -d
+# It raises the per-user payment write limit (default 120/min, PAYMENT_WRITE_RATE_LIMIT_PER_MINUTE)
+# so scenarios 01 and 04 measure latency and 5xx instead of 429s. The production default is not
+# changed. The auth limits are NOT overridden: scenario 03 tests them as shipped.
+services:
+  app:
+    environment:
+      PAYMENT_WRITE_RATE_LIMIT_PER_MINUTE: ${PERF_PAYMENT_WRITE_RATE_LIMIT_PER_MINUTE:-1000000}
