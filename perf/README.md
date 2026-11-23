@@ -86,3 +86,52 @@ These are not required steps.
 - k6 returns 401: `setup()` logs in on every run. If register was rate-limited (20 auth calls per minute per IP), wait and rerun `perf/seed-payments.sh`.
 - Existing local databases have the former Flyway history and must be reset with `scripts/db-reset.sh` before using the consolidated migration history; use the script only against local development Compose.
 - The Compose project name is not `java-clean-arch-sample`: `run-k6.sh` reads the network from the `payments-app` container. Set `K6_NETWORK` if that container is not running.
+
+## Load and stress suite (k6)
+
+Spec: [specs/015-k6-load-stress-suite/spec.md](../specs/015-k6-load-stress-suite/spec.md).
+
+The suite under `perf/k6/scenarios/` covers four risk areas against the local Docker Compose stack:
+
+1. `01-concurrent-payments-stress.js`: 0→200 VUs ramp (2 min) and hold (3 min). Asserts all 201, zero 5xx, and verifies HikariCP pool resilience under virtual threads.
+2. `02-idempotency-race-condition.js`: 50 concurrent requests with the same `Idempotency-Key` and user. Asserts exactly one fresh 201, with remaining in-flight requests resolving to 409 or 503 (`Retry-After: 1`), followed by a replay returning 201 with `Idempotent-Replayed: true`.
+3. `03-rate-limiting-auth-stress.js`: validates `POST /api/v1/auth/login` limits per account (15/min, SHA-256 email) and per IP (20/min), verifying 429 with `Retry-After`.
+4. `04-outbox-soak.js`: transactional outbox soak (5,000 payments in 1 min, constant arrival rate) with Prometheus scraping (`payments_outbox_pending`, `payments_queue_messages` for ready and DLQ) verifying full drain to zero.
+
+### Running the benchmark
+
+```bash
+docker compose -f docker-compose.yml -f perf/compose.benchmark.yml up -d
+perf/run-benchmark.sh
+```
+
+Summaries (`.log`, `.json`, `.html`, `SUMMARY.txt`) are generated in `perf/results/<timestamp>/` (git-ignored).
+
+`run-benchmark.sh` refuses any `BASE_URL` that is not `127.0.0.1` or `localhost`, and it
+records the machine, the Docker and k6 versions, the Flyway version and the container
+state next to the results. `ENV_FILE` (default `/tmp/payments-k6.env`, mode 600) holds the
+seeded credentials and is never committed.
+
+### Measured run (2026-11-23, local)
+
+`perf/results/20261123T212956Z/`. 11 vCPU arm64 macOS, Docker 29.5.2, k6 v1.4.2, Flyway
+V9, write limit raised for the local stack only.
+
+| Scenario | Exit | Result |
+|---|---|---|
+| 01 concurrent payments | 99 | p95 969 ms (threshold 200 ms), 415.6 req/s, 0% failed, 125,084/125,084 created 201 |
+| 02 idempotency race | 0 | 1 fresh 201, 46 in-flight 409, 3 replayed 201, 0 unexpected status |
+| 03 auth rate limit | 0 | 41/41 as expected, 6× 429, 0 unexpected status |
+| 04 outbox soak | 0 | 5,001 created 201, 0 five-x, outbox 0, queue 0, DLQ 0 at the end |
+
+Scenario 01 fails only on the p95 threshold. The HikariCP pool (20 connections) is
+saturated for the whole run — `hikaricp_connections_pending` stays between 44 and 182 —
+so the p95 is pool wait time, not the write path. Zero requests failed. The suite does not
+relax that threshold to pass; the numbers go to the PR as a finding.
+
+Under the same load the outbox gauge reached 84k pending rows and the notifications queue
+26.7k ready messages, then drained at ~271 msg/s. Nothing was lost: the DLQ stayed at 0
+and the queue reached 0. The relay publishes one event per aggregate per batch
+(`OutboxRelayService`: batch 50, 20 batches per poll) and the notification listener is
+single-threaded, so a burst outruns the consumer for a few minutes.
+
