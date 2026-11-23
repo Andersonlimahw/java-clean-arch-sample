@@ -78,7 +78,8 @@ class EventSerializerTest {
     private static EventSerializer serializer(List<EventUpcaster> upcasters) {
         EventTypeRegistry registry = new EventTypeRegistry(List.of(
                 new EventTypeRegistration(STABLE_TYPE, 2, AccountCredited.class)));
-        return new EventSerializer(objectMapper(), registry, upcasters);
+        return new EventSerializer(objectMapper(), registry, upcasters,
+                com.muse.payments.shared.infrastructure.security.PersonalDataPayloadProtector.none());
     }
 
     private static ObjectMapper objectMapper() {

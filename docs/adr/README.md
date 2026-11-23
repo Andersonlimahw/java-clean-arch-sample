@@ -23,6 +23,7 @@ For the full guide index, see [../README.md](../README.md). Implementation guide
 | [0017](0017-async-projection-position-fence.md) | Safe positional checkpoints across transaction ordering | Accepted. Complements 0016. |
 | [0018](0018-production-surface-and-operational-hardening.md) | Production surface, key rotation, rate limiting, and operational retention | Accepted |
 | [0019](0019-psp-provider-strategy-and-webhooks.md) | Provider strategy port and signed PSP webhooks | Accepted |
+| [0020](0020-crypto-shredding-and-kek-management.md) | Crypto-shredding for erasure and KEK management | Accepted |
 
 ## Retired records
 

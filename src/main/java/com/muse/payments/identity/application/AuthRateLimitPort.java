@@ -7,4 +7,8 @@ public interface AuthRateLimitPort {
     default boolean tryAcquireAccount(String email) {
         return true;
     }
+
+    /** Drops the per-account bucket, whose key is derived from the email, after an erasure. */
+    default void forgetAccount(String email) {
+    }
 }

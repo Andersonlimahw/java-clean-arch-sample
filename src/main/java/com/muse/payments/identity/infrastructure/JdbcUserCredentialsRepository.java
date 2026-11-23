@@ -4,6 +4,7 @@ import com.muse.payments.identity.application.UserCredentialsRepository;
 import com.muse.payments.shared.domain.ValidationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -49,5 +50,11 @@ public class JdbcUserCredentialsRepository implements UserCredentialsRepository 
     public Optional<String> findPasswordHashByUserId(UUID userId) {
         List<String> rows = jdbcTemplate.query(SELECT, (rs, rowNum) -> rs.getString("password_hash"), userId);
         return rows.stream().findFirst();
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void delete(UUID userId) {
+        jdbcTemplate.update("DELETE FROM user_credentials WHERE user_id = ?", Objects.requireNonNull(userId));
     }
 }

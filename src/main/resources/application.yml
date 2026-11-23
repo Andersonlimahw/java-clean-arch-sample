@@ -129,6 +129,13 @@ app:
     public-key-pem: ${JWT_PUBLIC_KEY:}
     previous-key-id: ${JWT_PREVIOUS_KEY_ID:payments-jwt-key-v0}
     previous-public-key-pem: ${JWT_PREVIOUS_PUBLIC_KEY:}
+  # Crypto-shredding KEK (ADR 0020). 32 random bytes, base64. Required on prod; blank elsewhere
+  # means an ephemeral per-JVM KEK. Never commit a value.
+  lgpd:
+    kek-base64: ${LGPD_KEK_BASE64:}
+    kek-id: ${LGPD_KEK_ID:lgpd-kek-v1}
+    previous-kek-base64: ${LGPD_PREVIOUS_KEK_BASE64:}
+    previous-kek-id: ${LGPD_PREVIOUS_KEK_ID:lgpd-kek-v0}
   messaging:
     listener-max-attempts: ${LISTENER_MAX_ATTEMPTS:5}
     listener-initial-interval-ms: ${LISTENER_INITIAL_INTERVAL_MS:500}

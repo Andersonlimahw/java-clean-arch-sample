@@ -3,10 +3,12 @@ package com.muse.payments.shared.infrastructure.eventstore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.muse.payments.shared.application.EventMetadata;
 import com.muse.payments.shared.application.EventTypeRegistration;
 import com.muse.payments.shared.application.EventUpcaster;
 import com.muse.payments.shared.domain.DomainEvent;
+import com.muse.payments.shared.infrastructure.security.PersonalDataPayloadProtector;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,15 +20,18 @@ public class EventSerializer {
     private final ObjectMapper objectMapper;
     private final EventTypeRegistry registry;
     private final List<EventUpcaster> upcasters;
+    private final PersonalDataPayloadProtector personalData;
 
     public EventSerializer(
             ObjectMapper objectMapper,
             EventTypeRegistry registry,
-            List<EventUpcaster> upcasters
+            List<EventUpcaster> upcasters,
+            PersonalDataPayloadProtector personalData
     ) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.registry = Objects.requireNonNull(registry);
         this.upcasters = List.copyOf(Objects.requireNonNull(upcasters));
+        this.personalData = Objects.requireNonNull(personalData);
     }
 
     SerializedEvent serialize(DomainEvent event) {
@@ -35,6 +40,7 @@ public class EventSerializer {
         if (payload == null || !payload.isObject()) {
             throw new IllegalStateException("Domain events must serialize to JSON objects");
         }
+        personalData.protect(registration.name(), (ObjectNode) payload);
         return new SerializedEvent(registration.name(), registration.schemaVersion(), payload);
     }
 
@@ -45,7 +51,7 @@ public class EventSerializer {
                     + " for event type " + eventType);
         }
         try {
-            String upcastedJson = payloadJson;
+            String upcastedJson = revealPersonalData(eventType, payloadJson);
             int schemaVersion = storedSchemaVersion;
             while (schemaVersion < registration.schemaVersion()) {
                 int sourceVersion = schemaVersion;
@@ -72,6 +78,19 @@ public class EventSerializer {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Stored event payload is invalid for " + eventType, e);
         }
+    }
+
+    /** Decrypts protected fields at the stored schema version, before any upcaster sees the payload. */
+    private String revealPersonalData(String eventType, String payloadJson) throws JsonProcessingException {
+        if (!PersonalDataPayloadProtector.mayContainProtectedValues(payloadJson)) {
+            return payloadJson;
+        }
+        JsonNode stored = objectMapper.readTree(payloadJson);
+        if (stored == null || !stored.isObject()) {
+            throw new IllegalStateException("Stored event payload must be a JSON object");
+        }
+        personalData.reveal(eventType, (ObjectNode) stored);
+        return stored.toString();
     }
 
     String serializeMetadata(EventMetadata metadata) {

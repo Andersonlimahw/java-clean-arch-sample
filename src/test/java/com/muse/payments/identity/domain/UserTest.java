@@ -23,6 +23,46 @@ class UserTest {
     }
 
     @Test
+    @DisplayName("anonymize() redacts personal fields, disables the account and replays identically")
+    void anonymizeRedactsAndReplays() {
+        User user = User.create("erase@example.com", "Erase Me", Set.of("USER"));
+        user.anonymize(user.getId());
+
+        assertThat(user.isAnonymized()).isTrue();
+        assertThat(user.isEnabled()).isFalse();
+        assertThat(user.getEmail()).isEqualTo(User.anonymizedEmail(user.getId()));
+        assertThat(user.getDisplayName()).isEqualTo("[REDACTED_LGPD]");
+        assertThat(user.peekDomainEvents()).last().isInstanceOf(UserAnonymizationRequestedEvent.class);
+
+        User replay = User.rehydrate(user.peekDomainEvents());
+        assertThat(replay.isAnonymized()).isTrue();
+        assertThat(replay.getEmail()).isEqualTo(user.getEmail());
+        assertThat(replay.getVersion()).isEqualTo(user.getVersion());
+    }
+
+    @Test
+    @DisplayName("anonymize() is idempotent: a second call raises no event")
+    void anonymizeIsIdempotent() {
+        User user = User.create("twice@example.com", "Twice", Set.of("USER"));
+        user.anonymize(user.getId());
+        int events = user.peekDomainEvents().size();
+
+        user.anonymize(user.getId());
+
+        assertThat(user.peekDomainEvents()).hasSize(events);
+    }
+
+    @Test
+    @DisplayName("The anonymization event carries no personal data")
+    void anonymizationEventHasNoPersonalData() {
+        User user = User.create("clean@example.com", "Clean", Set.of("USER"));
+        user.anonymize(user.getId());
+
+        String event = user.peekDomainEvents().get(user.peekDomainEvents().size() - 1).toString();
+        assertThat(event).doesNotContain("clean@example.com").doesNotContain("Clean");
+    }
+
+    @Test
     @DisplayName("Successfully create user with valid attributes")
     void createValidUser() {
         User user = User.create("test@example.com", "John Doe", Set.of("USER"));

@@ -8,8 +8,11 @@ import com.muse.payments.payments.domain.PaymentProviderIntentCreatedEvent;
 import com.muse.payments.payments.domain.PaymentRejectedInReviewEvent;
 import com.muse.payments.payments.domain.PaymentReleasedFromReviewEvent;
 import com.muse.payments.shared.application.EventTypeRegistration;
+import com.muse.payments.shared.application.PersonalDataFields;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.Set;
 
 @Configuration
 public class PaymentEventRegistryConfiguration {
@@ -44,6 +47,31 @@ public class PaymentEventRegistryConfiguration {
     @Bean
     EventTypeRegistration paymentCancelledRegistration() {
         return new EventTypeRegistration("payments.payment-cancelled", 1, PaymentCancelledEvent.class);
+    }
+
+    @Bean
+    PersonalDataFields paymentInitiatedPersonalData() {
+        return new PersonalDataFields("payments.payment-initiated", "userId", Set.of("description"));
+    }
+
+    @Bean
+    PersonalDataFields paymentHeldForReviewPersonalData() {
+        return new PersonalDataFields("payments.payment-held-for-review", "userId", Set.of("description"));
+    }
+
+    @Bean
+    PersonalDataFields paymentReleasedFromReviewPersonalData() {
+        return new PersonalDataFields("payments.payment-released-from-review", "userId", Set.of("description"));
+    }
+
+    @Bean
+    PersonalDataFields paymentCancelledPersonalData() {
+        return new PersonalDataFields("payments.payment-cancelled", "userId", Set.of("reason"));
+    }
+
+    @Bean
+    PersonalDataFields paymentRejectedInReviewPersonalData() {
+        return new PersonalDataFields("payments.payment-rejected-in-review", "userId", Set.of("reason"));
     }
 
     @Bean
