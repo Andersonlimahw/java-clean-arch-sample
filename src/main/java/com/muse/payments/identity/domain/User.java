@@ -2,6 +2,7 @@ package com.muse.payments.identity.domain;
 
 import com.muse.payments.shared.domain.DomainEvent;
 import com.muse.payments.shared.domain.EventSourcedAggregate;
+import com.muse.payments.shared.domain.PersonalData;
 import com.muse.payments.shared.domain.ValidationException;
 
 import java.time.Instant;
@@ -20,11 +21,17 @@ public class User extends EventSourcedAggregate<UUID> {
     private String displayName;
     private Set<String> roles;
     private boolean enabled;
+    private boolean anonymized;
     private Instant createdAt;
     private Instant updatedAt;
     private Long projectionVersion;
 
     private User() {
+    }
+
+    /** Unique, non-identifying placeholder that keeps the users.email unique index satisfied. */
+    public static String anonymizedEmail(UUID userId) {
+        return "redacted-" + Objects.requireNonNull(userId, "userId must not be null") + "@deleted.lgpd";
     }
 
     private User(
@@ -94,6 +101,18 @@ public class User extends EventSourcedAggregate<UUID> {
         raise(new UserDisabledEvent(this.id, Instant.now()));
     }
 
+    /**
+     * Erases the user's personal data. Idempotent: an already anonymized user raises nothing.
+     * Also disables the account, so tokens and logins are refused.
+     */
+    public void anonymize(UUID requestedBy) {
+        Objects.requireNonNull(requestedBy, "requestedBy must not be null");
+        if (this.anonymized) {
+            return;
+        }
+        raise(new UserAnonymizationRequestedEvent(this.id, requestedBy, Instant.now()));
+    }
+
     @Override
     protected void apply(DomainEvent event) {
         switch (event) {
@@ -109,6 +128,14 @@ public class User extends EventSourcedAggregate<UUID> {
             }
             case UserDisabledEvent e -> {
                 this.enabled = false;
+                this.updatedAt = e.occurredAt();
+                this.projectionVersion = null;
+            }
+            case UserAnonymizationRequestedEvent e -> {
+                this.email = anonymizedEmail(e.userId());
+                this.displayName = PersonalData.REDACTED;
+                this.enabled = false;
+                this.anonymized = true;
                 this.updatedAt = e.occurredAt();
                 this.projectionVersion = null;
             }
@@ -135,6 +162,10 @@ public class User extends EventSourcedAggregate<UUID> {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    public boolean isAnonymized() {
+        return anonymized;
     }
 
     public Instant getCreatedAt() {

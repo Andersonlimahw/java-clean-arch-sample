@@ -1,5 +1,7 @@
 package com.muse.payments.identity.infrastructure;
 
+import com.muse.payments.identity.domain.User;
+import com.muse.payments.identity.domain.UserAnonymizationRequestedEvent;
 import com.muse.payments.identity.domain.UserDisabledEvent;
 import com.muse.payments.identity.domain.UserRegisteredEvent;
 import com.muse.payments.shared.application.EventMetadata;
@@ -8,6 +10,7 @@ import com.muse.payments.shared.application.StoredEvent;
 import com.muse.payments.shared.application.StreamRef;
 import com.muse.payments.shared.application.SyncProjector;
 import com.muse.payments.shared.domain.DomainEvent;
+import com.muse.payments.shared.domain.PersonalData;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -37,6 +40,12 @@ public class UserProjector implements SyncProjector<DomainEvent>, RebuildablePro
     private static final String UPDATE_DISABLED = """
             UPDATE users
             SET enabled = false, updated_at = ?, version = ?
+            WHERE id = ?
+            """;
+
+    private static final String UPDATE_ANONYMIZED = """
+            UPDATE users
+            SET email = ?, display_name = ?, enabled = false, updated_at = ?, version = ?
             WHERE id = ?
             """;
 
@@ -76,10 +85,11 @@ public class UserProjector implements SyncProjector<DomainEvent>, RebuildablePro
         long projectionVersion = streamVersion - 1;
 
         switch (event) {
+            // After erasure a rebuild reads the shredded email as REDACTED; keep it unique per user.
             case UserRegisteredEvent e -> jdbcTemplate.update(
                     UPSERT_REGISTERED,
                     e.userId(),
-                    e.email(),
+                    PersonalData.isRedacted(e.email()) ? User.anonymizedEmail(e.userId()) : e.email(),
                     e.displayName(),
                     String.join(",", e.roles()),
                     Timestamp.from(e.occurredAt()),
@@ -88,6 +98,14 @@ public class UserProjector implements SyncProjector<DomainEvent>, RebuildablePro
             );
             case UserDisabledEvent e -> jdbcTemplate.update(
                     UPDATE_DISABLED,
+                    Timestamp.from(e.occurredAt()),
+                    projectionVersion,
+                    e.userId()
+            );
+            case UserAnonymizationRequestedEvent e -> jdbcTemplate.update(
+                    UPDATE_ANONYMIZED,
+                    User.anonymizedEmail(e.userId()),
+                    PersonalData.REDACTED,
                     Timestamp.from(e.occurredAt()),
                     projectionVersion,
                     e.userId()

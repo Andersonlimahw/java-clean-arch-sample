@@ -66,8 +66,26 @@ public class AuthRateLimiter implements AuthRateLimitPort {
         if (email == null || email.isBlank()) {
             return true;
         }
-        String accountDigest = sha256Hex(email.trim().toLowerCase(Locale.ROOT));
-        return acquireBucket("ratelimit:auth:account:" + accountDigest, maxAccountRequestsPerMinute);
+        return acquireBucket(accountKey(email), maxAccountRequestsPerMinute);
+    }
+
+    @Override
+    public void forgetAccount(String email) {
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        String key = accountKey(email);
+        fallbackCache.remove(key);
+        try {
+            redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.warn("Redis unavailable while dropping an account rate-limit bucket ({}); it expires within {}",
+                    e.getMessage(), WINDOW_DURATION);
+        }
+    }
+
+    private static String accountKey(String email) {
+        return "ratelimit:auth:account:" + sha256Hex(email.trim().toLowerCase(Locale.ROOT));
     }
 
     private boolean acquireBucket(String key, int limit) {

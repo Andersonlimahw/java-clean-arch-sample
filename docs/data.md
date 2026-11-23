@@ -1,7 +1,7 @@
 ---
 title: Data Model
 status: active
-updated: 2026-11-21
+updated: 2026-11-23
 related: [architecture.md, concurrency.md, testing.md]
 ---
 
@@ -22,8 +22,9 @@ PostgreSQL is the system of record. Flyway migrations run in version order from 
 | V7 | `V7__independent_identity_projections.sql` | Removes the refresh-token-to-user read-model FK so each projection rebuilds independently. |
 | V8 | `V8__operational_retention_indexes.sql` | Adds the retention indexes used by the scheduled pruning jobs. |
 | V9 | `V9__payment_provider_webhooks.sql` | Adds the provider link (`provider`, `provider_reference`) to `payments` and the `payment_provider_events` dedupe table. |
+| V10 | `V10__add_user_crypto_keys.sql` | Adds per-user wrapped DEKs and tombstones for LGPD/GDPR crypto-shredding; no FK to the rebuildable `users` projection. |
 
-These migrations replace the former V1–V7 history for the clean-database Event Sourcing rollout. The local reset script removes the old schema and replays the consolidated migrations; it does not backfill existing rows.
+These migrations replace the former V1–V7 history for the clean-database Event Sourcing rollout. The local reset script removes the old schema and replays the consolidated migrations; it does not backfill existing rows. V10 preserves the append-only `event_store`: erasure destroys the user's data key and redacts personal fields during rehydration rather than mutating historical events. See [ADR 0020](adr/0020-crypto-shredding-and-kek-management.md).
 
 There are no cross-module foreign keys. V7 removes the original intra-module refresh-token FK; rebuilding `users` preserves both `refresh_tokens` and the non-rebuildable `user_credentials` state table.
 
@@ -101,7 +102,7 @@ Safety: it refuses a `DB_URL` host other than `localhost`, `127.0.0.1`, `::1`, `
 
 ## Implementation references
 
-- Migration SQL: `src/main/resources/db/migration/V1__shared.sql` through `V9__payment_provider_webhooks.sql` (V5–V9 appended after the one-time rewrite).
+- Migration SQL: `src/main/resources/db/migration/V1__shared.sql` through `V10__add_user_crypto_keys.sql` (V5–V10 appended after the one-time rewrite).
 - Event-store kernel and adapters: `src/main/java/com/muse/payments/shared/domain/EventSourcedAggregate.java`, `src/main/java/com/muse/payments/shared/application/EventStore.java`, and `src/main/java/com/muse/payments/shared/infrastructure/eventstore/`.
 - Runtime Flyway lock setting: `src/main/resources/application.yml`.
 - Payment list and held-payment queries: `src/main/java/com/muse/payments/payments/application/ListPaymentsQueryHandler.java`, `src/main/java/com/muse/payments/payments/application/ListHeldPaymentsQueryHandler.java`, and `src/main/java/com/muse/payments/payments/infrastructure/PaymentJpaRepository.java`.
@@ -114,4 +115,4 @@ rtk mvn -q -Dtest=MigrationOnlyModeTest,JavaVersionPinsTest test
 DB_URL=jdbc:postgresql://db.example.com:5432/payments DB_PASSWORD=x scripts/db-reset.sh --yes; echo $?
 ```
 
-Expected result: migration-only startup and version pins remain valid; Flyway applies V1–V9 on a clean PostgreSQL 16 database, and the reset script refuses the non-local host with exit code `1`. `AsyncProjectionIT` checks inverted XID/position ordering and restart; `ProjectionRebuildIT` checks all five projections and preservation of credentials/tokens.
+Expected result: migration-only startup and version pins remain valid; Flyway applies V1–V10 on a clean PostgreSQL 16 database, and the reset script refuses the non-local host with exit code `1`. `AsyncProjectionIT` checks inverted XID/position ordering and restart; `ProjectionRebuildIT` checks all five projections and preservation of credentials/tokens.

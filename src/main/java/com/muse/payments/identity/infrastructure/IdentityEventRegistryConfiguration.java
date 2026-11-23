@@ -4,11 +4,15 @@ import com.muse.payments.identity.domain.FamilyRevokedEvent;
 import com.muse.payments.identity.domain.FamilyStartedEvent;
 import com.muse.payments.identity.domain.TokenRevokedEvent;
 import com.muse.payments.identity.domain.TokenRotatedEvent;
+import com.muse.payments.identity.domain.UserAnonymizationRequestedEvent;
 import com.muse.payments.identity.domain.UserDisabledEvent;
 import com.muse.payments.identity.domain.UserRegisteredEvent;
 import com.muse.payments.shared.application.EventTypeRegistration;
+import com.muse.payments.shared.application.PersonalDataFields;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.Set;
 
 @Configuration
 public class IdentityEventRegistryConfiguration {
@@ -24,6 +28,17 @@ public class IdentityEventRegistryConfiguration {
     @Bean
     EventTypeRegistration userDisabledRegistration() {
         return new EventTypeRegistration("identity.user-disabled", 1, UserDisabledEvent.class);
+    }
+
+    @Bean
+    EventTypeRegistration userAnonymizationRequestedRegistration() {
+        return new EventTypeRegistration(
+                "identity.user-anonymization-requested", 1, UserAnonymizationRequestedEvent.class);
+    }
+
+    @Bean
+    PersonalDataFields userRegisteredPersonalData() {
+        return new PersonalDataFields("identity.user-registered", "userId", Set.of("email", "displayName"));
     }
 
     @Bean

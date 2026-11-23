@@ -48,10 +48,25 @@ public class PaymentWriteRateLimiter implements PaymentWriteRateLimitPort {
         this.maxWritesPerMinute = maxWritesPerMinute;
     }
 
+    /** Drops the user's bucket after an erasure. Best effort: the bucket expires within a minute anyway. */
+    public void forget(UUID userId) {
+        String key = key(Objects.requireNonNull(userId, "userId must not be null"));
+        fallbackCache.remove(key);
+        try {
+            redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.warn("Redis unavailable while dropping a payment write bucket ({})", e.getMessage());
+        }
+    }
+
+    private static String key(UUID userId) {
+        return "ratelimit:payments:write:" + userId;
+    }
+
     @Override
     public boolean tryAcquire(UUID userId) {
         Objects.requireNonNull(userId, "userId must not be null");
-        String key = "ratelimit:payments:write:" + userId;
+        String key = key(userId);
         try {
             Long count = redisTemplate.execute(
                     INCREMENT_WITH_TTL,
